@@ -19,6 +19,9 @@
     <string name="nav_screenplay">Guion</string>
     <string name="nav_storyboard">Storyboard</string>
 
+    <string name="dashboard_title">Panel de Producciones</string>
+    <string name="dashboard_subtitle">Selecciona un proyecto activo o crea una nueva producción cinematográfica.</string>
+    <string name="action_open_dashboard">Volver a Producciones</string>
     <string name="action_new_project">Nueva producción</string>
     <string name="action_create_first_project">Crear primera producción</string>
     <string name="action_learning">Autoaprendizaje</string>

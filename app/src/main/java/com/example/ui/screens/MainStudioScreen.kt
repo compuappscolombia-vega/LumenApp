@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
@@ -204,6 +206,7 @@ private fun StudioWorkspaceShell(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
+    var showDashboard by remember(currentUser.uid) { mutableStateOf(true) }
     var showIngestSheet by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showLearningDialog by remember { mutableStateOf(false) }
@@ -212,31 +215,62 @@ private fun StudioWorkspaceShell(
     var overflowExpanded by remember { mutableStateOf(false) }
     var sequenceMenuExpanded by remember { mutableStateOf(false) }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ObsidianBg)) {
-        val isWideTablet = maxWidth >= 840.dp
-
-        val drawerContent: @Composable () -> Unit = {
-            StudioDrawerContent(
-                projects = ui.projects,
-                activeProjectId = ui.activeProject?.id.orEmpty(),
-                activeSequenceId = ui.activeSequence?.id.orEmpty(),
-                searchQuery = ui.searchQuery,
-                onSearchChange = vm::updateSearchQuery,
-                onSelectProject = { pid ->
-                    vm.selectProject(pid)
-                    if (!isWideTablet) scope.launch { drawerState.close() }
-                },
-                onSelectSequence = { sid ->
-                    vm.selectSequence(sid)
-                    if (!isWideTablet) scope.launch { drawerState.close() }
-                },
-                onDeleteProject = vm::deleteProject,
-                onCreateProjectClick = {
-                    showNewProjectDialog = true
-                    if (!isWideTablet) scope.launch { drawerState.close() }
-                }
-            )
+    if (showDashboard) {
+        ProjectDashboardScreen(
+            currentUser = currentUser,
+            projects = ui.projects,
+            activeProjectId = ui.activeProject?.id.orEmpty(),
+            searchQuery = ui.searchQuery,
+            statusBanner = ui.statusBanner,
+            errorBanner = ui.errorBanner,
+            onSearchChange = vm::updateSearchQuery,
+            onSelectProject = { proj ->
+                vm.selectProject(proj.id)
+                showDashboard = false
+            },
+            onCreateProjectClick = { showNewProjectDialog = true },
+            onDeleteProject = vm::deleteProject,
+            onOpenLearning = { showLearningDialog = true },
+            onOpenBlueprint = { showBlueprintDialog = true },
+            onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
+            onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
+            onOpenAccount = { showAccountDialog = true },
+            onDismissBanner = vm::clearBanners
+        )
+    } else {
+        BackHandler {
+            showDashboard = true
         }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ObsidianBg)) {
+            val isWideTablet = maxWidth >= 840.dp
+
+            val drawerContent: @Composable () -> Unit = {
+                StudioDrawerContent(
+                    projects = ui.projects,
+                    activeProjectId = ui.activeProject?.id.orEmpty(),
+                    activeSequenceId = ui.activeSequence?.id.orEmpty(),
+                    searchQuery = ui.searchQuery,
+                    onSearchChange = vm::updateSearchQuery,
+                    onOpenDashboard = {
+                        showDashboard = true
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    },
+                    onSelectProject = { pid ->
+                        vm.selectProject(pid)
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    },
+                    onSelectSequence = { sid ->
+                        vm.selectSequence(sid)
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    },
+                    onDeleteProject = vm::deleteProject,
+                    onCreateProjectClick = {
+                        showNewProjectDialog = true
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    }
+                )
+            }
 
         val scaffoldBody: @Composable () -> Unit = {
             Scaffold(
@@ -318,6 +352,16 @@ private fun StudioWorkspaceShell(
                             }
                         },
                         actions = {
+                            IconButton(
+                                onClick = { showDashboard = true },
+                                modifier = Modifier.testTag("open_dashboard_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.GridView,
+                                    contentDescription = stringResource(R.string.action_open_dashboard),
+                                    tint = IvoryPrimary
+                                )
+                            }
                             val activeProj = ui.activeProject
                             val activeSeq = ui.activeSequence
                             if (activeProj != null) {
@@ -581,6 +625,7 @@ private fun StudioWorkspaceShell(
                 content = scaffoldBody
             )
         }
+        }
     }
 
     if (showIngestSheet && ui.activeProject != null) {
@@ -618,7 +663,10 @@ private fun StudioWorkspaceShell(
     if (showNewProjectDialog) {
         NewProjectDialog(
             onDismiss = { showNewProjectDialog = false },
-            onCreate = vm::createProject
+            onCreate = { title, genreStyle, sourceType, bible ->
+                vm.createProject(title, genreStyle, sourceType, bible)
+                showDashboard = false
+            }
         )
     }
 
@@ -652,6 +700,7 @@ private fun StudioDrawerContent(
     activeSequenceId: String,
     searchQuery: String,
     onSearchChange: (String) -> Unit,
+    onOpenDashboard: () -> Unit,
     onSelectProject: (String) -> Unit,
     onSelectSequence: (String) -> Unit,
     onDeleteProject: (String) -> Unit,
@@ -668,11 +717,23 @@ private fun StudioDrawerContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Rounded.Movie, contentDescription = null, tint = AmberGold)
-            Text(stringResource(R.string.studio_brand_title), style = MaterialTheme.typography.titleMedium, color = IvoryPrimary)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.Movie, contentDescription = null, tint = AmberGold)
+                Text(stringResource(R.string.studio_brand_title), style = MaterialTheme.typography.titleMedium, color = IvoryPrimary)
+            }
+            IconButton(
+                onClick = onOpenDashboard,
+                modifier = Modifier.testTag("drawer_open_dashboard_button")
+            ) {
+                Icon(Icons.Rounded.GridView, contentDescription = stringResource(R.string.action_open_dashboard), tint = AmberGold)
+            }
         }
 
         OutlinedTextField(
