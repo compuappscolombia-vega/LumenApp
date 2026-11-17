@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LumenReel</string>
+    <string name="studio_brand_title">LumenReel Studio</string>
+    <string name="studio_brand_subtitle">Estudio Cinematográfico Independiente</string>
+
+    <!-- Auth Gate -->
+    <string name="auth_headline">Dirección, Guion y VFX en un Solo Estudio</string>
+    <string name="auth_subhead">Convierte libros, audiolibros e historias en expedientes cinematográficos completos con ópticas reales, iluminación Kelvin, Dolby Atmos, guion técnico y storyboards.</string>
+    <string name="auth_google_cta">Continuar con Google</string>
+    <string name="auth_signing_in">Verificando sesión con Google…</string>
+    <string name="auth_privacy_note">Tu espacio de trabajo, biblia de continuidad y memoria de aprendizaje permanecen aislados de forma privada por tu cuenta de Google.</string>
+    <string name="auth_error_cancelled">Inicio de sesión cancelado.</string>
+
+    <!-- Navigation & TopBar -->
+    <string name="nav_agent">Agente</string>
+    <string name="nav_vision">Dirección</string>
+    <string name="nav_shots">Planos y Sonido</string>
+    <string name="nav_screenplay">Guion</string>
+    <string name="nav_storyboard">Storyboard</string>
+
+    <string name="action_new_project">Nueva producción</string>
+    <string name="action_create_first_project">Crear primera producción</string>
+    <string name="action_learning">Autoaprendizaje</string>
+    <string name="action_blueprint">Plantilla Agent Studio</string>
+    <string name="action_user_manual">Manual de uso (PDF)</string>
+    <string name="action_library_pdf">Biblioteca PDF</string>
+    <string name="action_approve_final">Aprobar Versión Final</string>
+    <string name="action_sign_out">Cerrar sesión</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_close">Cerrar</string>
+    <string name="action_save">Guardar</string>
+
+    <!-- Status Badges -->
+    <string name="status_draft">Borrador</string>
+    <string name="status_final">Versión Final</string>
+    <string name="search_projects_hint">Buscar producciones o secuencias…</string>
+
+    <!-- Ingest Panel -->
+    <string name="ingest_title">Mesa de Ingesta y Dirección</string>
+    <string name="ingest_seq_title_label">Título del capítulo o secuencia</string>
+    <string name="ingest_seq_title_hint">Ej. Capítulo I: El Faro de Sal</string>
+    <string name="ingest_source_type_label">Tipo de material fuente</string>
+    <string name="ingest_style_label">Firma de dirección</string>
+    <string name="ingest_ratio_label">Relación de aspecto</string>
+    <string name="ingest_depth_label">Profundidad de análisis</string>
+    <string name="ingest_depth_standard">Estándar</string>
+    <string name="ingest_depth_deep">Profunda</string>
+    <string name="ingest_text_label">Texto fuente o sinopsis</string>
+    <string name="ingest_text_hint">Pega un capítulo de libro, relato o escena (mínimo 20 caracteres si no adjuntas archivo)…</string>
+    <string name="ingest_pick_file">Adjuntar PDF, TXT o Audio</string>
+    <string name="ingest_clear_file">Quitar archivo</string>
+    <string name="ingest_analyze_audio">Analizar solo audio</string>
+    <string name="ingest_produce_cta">Producir secuencia</string>
+    <string name="ingest_producing">Dirigiendo secuencia con Gemini…</string>
+    <string name="ingest_analyzing_audio">Analizando pista de audio…</string>
+
+    <!-- Continuity Bible -->
+    <string name="bible_title">Biblia de Continuidad del Proyecto</string>
+    <string name="bible_hint">Personajes, reglas visuales, vestuario, locaciones y acuerdos acumulados entre capítulos…</string>
+    <string name="bible_save_cta">Guardar Biblia</string>
+
+    <!-- Empty states -->
+    <string name="empty_projects_title">Tu estudio está listo para rodar</string>
+    <string name="empty_projects_body">Crea una producción nueva desde el botón inferior o el cajón lateral para iniciar tu Biblia de Continuidad, dirigir capítulos o conversar con el Agente Tripartito.</string>
+    <string name="empty_sequences_title">Sin secuencias producidas aún</string>
+    <string name="empty_sequences_body">Abre la Mesa de Ingesta para adaptar un capítulo, historia o audiolibro, o comienza definiendo la Biblia con el Agente.</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_open_drawer">Abrir lista de producciones</string>
+    <string name="cd_open_ingest">Abrir mesa de ingesta</string>
+    <string name="cd_account_menu">Cuenta y cierre de sesión</string>
+    <string name="cd_auth_hero">Estudio de cine independiente LumenReel con cámara de 65mm</string>
+    <string name="cd_storyboard_image">Fotograma cinematográfico generado por Nano</string>
+</resources>

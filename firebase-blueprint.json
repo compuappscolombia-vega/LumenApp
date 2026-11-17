@@ -1,0 +1,260 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil privado del cineasta o productor autenticado en LumenReel Studio.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "UID de Firebase Auth del usuario propietario."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nombre del director o productor (1..120 caracteres)."
+        },
+        "email": {
+          "type": "string",
+          "description": "Correo electrónico de Google Sign-In (3..200 caracteres)."
+        },
+        "preferredStyle": {
+          "type": "string",
+          "description": "Estilo cinematográfico preferido opcional (<=160 caracteres)."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["director"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        }
+      },
+      "required": ["uid", "displayName", "email", "role", "createdAt", "updatedAt"]
+    },
+    "StudioProject": {
+      "title": "StudioProject",
+      "description": "Proyecto cinematográfico independiente almacenado para un usuario.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID del propietario."
+        },
+        "title": {
+          "type": "string",
+          "description": "Título de la producción (1..180 caracteres)."
+        },
+        "genreStyle": {
+          "type": "string",
+          "description": "Género o estilo visual (<=180 caracteres)."
+        },
+        "defaultSourceType": {
+          "type": "string",
+          "enum": ["book", "audiobook", "story"]
+        },
+        "continuityBible": {
+          "type": "string",
+          "description": "Biblia de continuidad acumulada (<=20000 caracteres)."
+        },
+        "sequencesCount": {
+          "type": "integer",
+          "description": "Cantidad de secuencias (0..1000)."
+        },
+        "assetsCount": {
+          "type": "integer",
+          "description": "Cantidad de recursos adjuntos (0..5000)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "genreStyle",
+        "defaultSourceType",
+        "continuityBible",
+        "sequencesCount",
+        "assetsCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ProjectSequence": {
+      "title": "ProjectSequence",
+      "description": "Secuencia producida dentro de un proyecto, con estado borrador o versión final.",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "ID del proyecto padre."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID del propietario."
+        },
+        "title": {
+          "type": "string",
+          "description": "Título de la secuencia (1..200 caracteres)."
+        },
+        "versionStatus": {
+          "type": "string",
+          "enum": ["draft", "final"]
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["book", "audiobook", "story"]
+        },
+        "directorStyle": {
+          "type": "string",
+          "description": "Firma cinematográfica (<=180 caracteres)."
+        },
+        "aspectRatio": {
+          "type": "string",
+          "description": "Relación de aspecto (<=24 caracteres)."
+        },
+        "logline": {
+          "type": "string",
+          "description": "Logline dramático (<=1200 caracteres)."
+        },
+        "directorVision": {
+          "type": "string",
+          "description": "Visión de dirección (<=6000 caracteres)."
+        },
+        "continuitySummary": {
+          "type": "string",
+          "description": "Resumen de continuidad (<=3000 caracteres)."
+        },
+        "sequenceRating": {
+          "type": "integer",
+          "description": "Valoración opcional de Studio Intelligence (1..5)."
+        },
+        "sequenceData": {
+          "type": "object",
+          "description": "Mapa nativo con cámara, paleta, iluminación, planos, sonido, informe de audio, VFX, guion y storyboard."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca temporal del servidor (FieldValue.serverTimestamp)."
+        }
+      },
+      "required": [
+        "projectId",
+        "ownerId",
+        "title",
+        "versionStatus",
+        "sourceType",
+        "directorStyle",
+        "aspectRatio",
+        "logline",
+        "directorVision",
+        "continuitySummary",
+        "sequenceData",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AgentMessage": {
+      "title": "AgentMessage",
+      "description": "Turno de conversación entre el productor y el Agente Cinematográfico Tripartito.",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        },
+        "focus": {
+          "type": "string",
+          "enum": ["council", "director", "screenwriter", "vfx"]
+        },
+        "content": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["projectId", "ownerId", "role", "focus", "content", "createdAt"]
+    },
+    "LearningLesson": {
+      "title": "LearningLesson",
+      "description": "Lección de autoaprendizaje y mejora continua extraída de evaluaciones o producciones finales.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["camera", "lighting", "sound", "screenplay", "pacing", "continuity"]
+        },
+        "insight": {
+          "type": "string"
+        },
+        "rating": {
+          "type": "integer"
+        },
+        "sourceProjectTitle": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "category", "insight", "rating", "sourceProjectTitle", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Perfil privado del usuario autenticado (PII aislada por propietario)."
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/StudioProject" },
+      "description": "Proyectos cinematográficos del usuario."
+    },
+    "/users/{userId}/projects/{projectId}/sequences/{sequenceId}": {
+      "schema": { "$ref": "#/entities/ProjectSequence" },
+      "description": "Secuencias y expedientes cinematográficos dentro de un proyecto."
+    },
+    "/users/{userId}/projects/{projectId}/agent_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/AgentMessage" },
+      "description": "Historial de mensajes del Agente Tripartito por proyecto."
+    },
+    "/users/{userId}/learning_memory/{lessonId}": {
+      "schema": { "$ref": "#/entities/LearningLesson" },
+      "description": "Memoria de autoaprendizaje y mejora continua del productor cinematográfico."
+    }
+  }
+}
