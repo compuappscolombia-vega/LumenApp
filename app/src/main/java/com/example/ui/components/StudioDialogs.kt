@@ -421,58 +421,105 @@ fun AgentBlueprintDialog(
 
 @Composable
 fun AccountDialog(
-    user: FirebaseUser,
+    user: FirebaseUser?,
+    authStatusMessage: String? = null,
+    onClearAuthStatus: () -> Unit = {},
+    onOptionalGoogleSignIn: () -> Unit = {},
     onDismiss: () -> Unit,
     onSignOut: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            onClearAuthStatus()
+            onDismiss()
+        },
         containerColor = StudioCard,
         titleContentColor = AmberGold,
         textContentColor = IvoryPrimary,
-        title = { Text("Cuenta de Estudio") },
+        title = { Text(if (user == null) "Modo Estudio Local" else "Cuenta de Estudio") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = user.displayName ?: "Director LumenReel",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = IvoryPrimary
-                )
-                Text(
-                    text = user.email ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = WarmSilver
-                )
-                Surface(
-                    color = StudioDeepPanel,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
-                ) {
+                if (user == null) {
                     Text(
-                        text = "UID privado: ${user.uid}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MutedStone,
-                        modifier = Modifier.padding(8.dp)
+                        text = "Estudio sin inicio de sesión",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = IvoryPrimary
                     )
+                    Text(
+                        text = "El inicio de sesión está omitido temporalmente. Todas tus producciones, secuencias, guiones y memoria de aprendizaje se guardan en este dispositivo y el Agente Gemini funciona directamente.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarmSilver
+                    )
+                } else {
+                    Text(
+                        text = user.displayName ?: "Director LumenReel",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = IvoryPrimary
+                    )
+                    Text(
+                        text = user.email ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarmSilver
+                    )
+                    Surface(
+                        color = StudioDeepPanel,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                    ) {
+                        Text(
+                            text = "UID privado: ${user.uid}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MutedStone,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+                if (!authStatusMessage.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = authStatusMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    onDismiss()
-                    onSignOut()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = ErrorCrimson, contentColor = IvoryPrimary),
-                modifier = Modifier.testTag("account_sign_out_button")
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.action_sign_out))
+            if (user == null) {
+                OutlinedButton(
+                    onClick = onOptionalGoogleSignIn,
+                    modifier = Modifier.testTag("optional_google_sign_in_button")
+                ) {
+                    Text("Conectar con Google (Opcional)", color = AmberGold)
+                }
+            } else {
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onSignOut()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorCrimson, contentColor = IvoryPrimary),
+                    modifier = Modifier.testTag("account_sign_out_button")
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(stringResource(R.string.action_sign_out))
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    onClearAuthStatus()
+                    onDismiss()
+                }
+            ) {
                 Text(stringResource(R.string.action_close), color = IvoryPrimary)
             }
         }

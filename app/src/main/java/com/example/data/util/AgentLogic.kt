@@ -355,15 +355,20 @@ $learningContext"""
     }
 
     fun formatAiError(error: Throwable): String {
+        if (error is kotlinx.coroutines.TimeoutCancellationException) {
+            return "Tiempo de espera agotado (60s) al conectar con Gemini. Verifica tu conexión o prueba con profundidad «Estándar»."
+        }
         val raw = error.localizedMessage ?: error.toString()
         val norm = raw.lowercase()
         return when {
             norm.contains("403") || norm.contains("app check") || norm.contains("attestation") ->
-                "Error de verificación de App Check o permisos (HTTP 403). Asegúrate de que la app esté ejecutándose con el token de App Check configurado."
+                "Error de verificación de App Check o permisos (HTTP 403). Asegúrate de ejecutar la app con el token de App Check configurado o crea un borrador manual mientras se restablece."
             norm.contains("429") || norm.contains("quota") || norm.contains("resource_exhausted") ->
                 "Límite de cuota de Gemini alcanzado (HTTP 429). Inténtalo nuevamente en unos segundos."
             norm.contains("413") || norm.contains("too large") ->
-                "El archivo adjunto excede el límite permitido (máx. 20 MB en línea)."
+                "El archivo adjunto excede el límite permitido (máx. 19 MB en línea)."
+            norm.contains("unsupported") && norm.contains("mime") ->
+                "Formato de archivo no compatible para envío directo. Prueba con PDF, TXT, MD, Fountain o audio MP3/WAV/M4A."
             else -> raw
         }
     }

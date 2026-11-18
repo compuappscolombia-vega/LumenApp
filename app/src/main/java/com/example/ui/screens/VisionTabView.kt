@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,17 +19,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Flare
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,9 +44,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,10 +58,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.model.DirectorDraftEdits
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
+import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.StudioIntelligenceReport
+import com.example.data.util.StudioLogic
 import com.example.ui.components.ProductionRadarChartCard
+import com.example.ui.components.readClipboardText
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.IvoryPrimary
@@ -71,15 +82,21 @@ import com.example.ui.theme.WarmSilver
 fun VisionTabView(
     project: ProductionProject,
     sequence: ProductionSequence,
+    directorDraft: DirectorDraftEdits,
+    selectedRating: Int,
+    ratingNote: String,
     intelligence: StudioIntelligenceReport?,
+    onDirectorDraftChange: ((DirectorDraftEdits) -> DirectorDraftEdits) -> Unit,
+    onSaveDirectorDraft: () -> Unit,
+    onRatingChange: (Int) -> Unit,
+    onRatingNoteChange: (String) -> Unit,
     onApplyEnhancement: (String) -> Unit,
     onRateSequence: (Int, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var copiedHex by remember { mutableStateOf<String?>(null) }
-    var selectedRating by remember(sequence.id) { mutableIntStateOf(sequence.sequenceRating ?: 5) }
-    var ratingNote by remember(sequence.id) { mutableStateOf("") }
+    val isDraft = sequence.versionStatus == SequenceVersionStatus.DRAFT
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -106,10 +123,228 @@ fun VisionTabView(
                     }
                 }
                 Text(
-                    text = sequence.directorVision.ifBlank { "Sin notas de visión registradas." },
+                    text = directorDraft.directorVision.ifBlank { sequence.directorVision }
+                        .ifBlank { "Sin notas de visión registradas." },
                     style = MaterialTheme.typography.bodyMedium,
                     color = WarmSilver
                 )
+            }
+        }
+
+        // Editable Director Adjustments (Preserved across tabs in StudioViewModel)
+        item {
+            SectionCard(
+                title = "Ajustes de Dirección y Óptica",
+                icon = Icons.Rounded.Tune
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isDraft) {
+                            "Tus ajustes se conservan al cambiar entre pestañas y puedes guardarlos en la secuencia."
+                        } else {
+                            "Secuencia en Versión Final (solo lectura técnica). Puedes actualizar la Biblia de Continuidad."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MutedStone,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (directorDraft.isDirty) {
+                        Surface(
+                            color = AmberContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Editado",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AmberGold,
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    .testTag("director_dirty_badge")
+                            )
+                        }
+                    }
+                }
+
+                Text("Firma de dirección", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StudioLogic.DIRECTOR_STYLES.forEach { preset ->
+                        FilterChip(
+                            selected = directorDraft.directorStyle == preset.label,
+                            enabled = isDraft,
+                            onClick = {
+                                onDirectorDraftChange {
+                                    it.copy(
+                                        directorStyle = preset.label,
+                                        aspectRatio = preset.defaultRatio,
+                                        cameraSystem = preset.defaultCamera,
+                                        lensPackage = preset.defaultLenses
+                                    )
+                                }
+                            },
+                            label = { Text(preset.label, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AmberContainer,
+                                selectedLabelColor = AmberGold,
+                                containerColor = StudioDeepPanel,
+                                labelColor = WarmSilver
+                            ),
+                            modifier = Modifier.testTag("vision_style_${preset.id}")
+                        )
+                    }
+                }
+
+                Text("Relación de aspecto", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StudioLogic.ASPECT_RATIO_OPTIONS.forEach { (ratio, label) ->
+                        FilterChip(
+                            selected = directorDraft.aspectRatio == ratio,
+                            enabled = isDraft,
+                            onClick = { onDirectorDraftChange { it.copy(aspectRatio = ratio) } },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AmberContainer,
+                                selectedLabelColor = AmberGold,
+                                containerColor = StudioDeepPanel,
+                                labelColor = WarmSilver
+                            ),
+                            modifier = Modifier.testTag("vision_ratio_$ratio")
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = directorDraft.cameraSystem,
+                    onValueChange = { value -> onDirectorDraftChange { it.copy(cameraSystem = value) } },
+                    enabled = isDraft,
+                    label = { Text("Cámara cinematográfica") },
+                    singleLine = true,
+                    colors = visionFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("director_camera_input")
+                )
+
+                OutlinedTextField(
+                    value = directorDraft.lensPackage,
+                    onValueChange = { value -> onDirectorDraftChange { it.copy(lensPackage = value) } },
+                    enabled = isDraft,
+                    label = { Text("Paquete de lentes") },
+                    singleLine = true,
+                    colors = visionFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("director_lenses_input")
+                )
+
+                OutlinedTextField(
+                    value = directorDraft.colorTempKelvin,
+                    onValueChange = { value -> onDirectorDraftChange { it.copy(colorTempKelvin = value) } },
+                    enabled = isDraft,
+                    label = { Text("Temperatura Kelvin / Color") },
+                    singleLine = true,
+                    colors = visionFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("director_kelvin_input")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Visión de dirección", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                    if (isDraft) {
+                        TextButton(
+                            onClick = {
+                                val clip = readClipboardText(context) ?: return@TextButton
+                                onDirectorDraftChange {
+                                    val next = if (it.directorVision.isBlank()) clip else "${it.directorVision.trim()}\n$clip"
+                                    it.copy(directorVision = next)
+                                }
+                            },
+                            modifier = Modifier.testTag("director_paste_vision_button")
+                        ) {
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = directorDraft.directorVision,
+                    onValueChange = { value -> onDirectorDraftChange { it.copy(directorVision = value) } },
+                    enabled = isDraft,
+                    minLines = 2,
+                    maxLines = 5,
+                    colors = visionFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("director_vision_input")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Biblia de Continuidad", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                    TextButton(
+                        onClick = {
+                            val clip = readClipboardText(context) ?: return@TextButton
+                            onDirectorDraftChange {
+                                val next = if (it.continuityBible.isBlank()) clip else "${it.continuityBible.trim()}\n$clip"
+                                it.copy(continuityBible = next)
+                            }
+                        },
+                        modifier = Modifier.testTag("director_paste_bible_button")
+                    ) {
+                        Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                OutlinedTextField(
+                    value = directorDraft.continuityBible,
+                    onValueChange = { value -> onDirectorDraftChange { it.copy(continuityBible = value) } },
+                    minLines = 2,
+                    maxLines = 5,
+                    colors = visionFieldColors(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("director_bible_input")
+                )
+
+                Button(
+                    onClick = onSaveDirectorDraft,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AmberGold,
+                        contentColor = ObsidianBg
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("save_director_edits_button")
+                ) {
+                    Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("Guardar ajustes de dirección", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -118,16 +353,19 @@ fun VisionTabView(
             ProductionRadarChartCard(project = project, activeSequence = sequence)
         }
 
-        // Camera, Optics & LUT
+        // Camera, Optics & LUT summary + Swatches
         item {
             SectionCard(
                 title = "Óptica, Cámara y Colorimetría",
                 icon = Icons.Rounded.CameraAlt
             ) {
-                SpecRow("Sistema de Cámara", sequence.cameraSystem)
-                SpecRow("Paquete de Lentes", sequence.lensPackage)
-                SpecRow("Emulsión / LUT", sequence.filmStockOrLut)
-                SpecRow("Formato & Estilo", "${sequence.aspectRatio} · ${sequence.directorStyle}")
+                SpecRow("Sistema de Cámara", directorDraft.cameraSystem.ifBlank { sequence.cameraSystem })
+                SpecRow("Paquete de Lentes", directorDraft.lensPackage.ifBlank { sequence.lensPackage })
+                SpecRow("Emulsión / LUT", directorDraft.filmStockOrLut.ifBlank { sequence.filmStockOrLut })
+                SpecRow(
+                    "Formato & Estilo",
+                    "${directorDraft.aspectRatio.ifBlank { sequence.aspectRatio }} · ${directorDraft.directorStyle.ifBlank { sequence.directorStyle }}"
+                )
 
                 if (sequence.colorPalette.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
@@ -207,7 +445,10 @@ fun VisionTabView(
                 SpecRow("Luz Principal (Key)", sequence.lighting.keyLight)
                 SpecRow("Ratio de Relleno", sequence.lighting.fillRatio)
                 SpecRow("Contraluz / Rim", sequence.lighting.rimAndBacklight)
-                SpecRow("Temperatura Kelvin", sequence.lighting.colorTemperatureKelvin)
+                SpecRow(
+                    "Temperatura Kelvin",
+                    directorDraft.colorTempKelvin.ifBlank { sequence.lighting.colorTemperatureKelvin }
+                )
                 SpecRow("Atmósfera & Haze", sequence.lighting.atmosphereAndHaze)
             }
         }
@@ -318,7 +559,7 @@ fun VisionTabView(
                 ) {
                     (1..5).forEach { star ->
                         IconButton(
-                            onClick = { selectedRating = star },
+                            onClick = { onRatingChange(star) },
                             modifier = Modifier.testTag("rate_star_$star")
                         ) {
                             Icon(
@@ -332,7 +573,7 @@ fun VisionTabView(
                 }
                 OutlinedTextField(
                     value = ratingNote,
-                    onValueChange = { ratingNote = it },
+                    onValueChange = onRatingNoteChange,
                     placeholder = {
                         Text(
                             "Nota opcional sobre óptica, luz o ritmo para futuras secuencias…",
@@ -340,21 +581,13 @@ fun VisionTabView(
                             color = MutedStone
                         )
                     },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AmberGold,
-                        unfocusedBorderColor = StudioBorder,
-                        focusedTextColor = IvoryPrimary,
-                        unfocusedTextColor = IvoryPrimary
-                    ),
+                    colors = visionFieldColors(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("rating_note_input")
                 )
                 Button(
-                    onClick = {
-                        onRateSequence(selectedRating, ratingNote)
-                        ratingNote = ""
-                    },
+                    onClick = { onRateSequence(selectedRating, ratingNote) },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AmberGold,
                         contentColor = ObsidianBg
@@ -370,6 +603,19 @@ fun VisionTabView(
         }
     }
 }
+
+@Composable
+private fun visionFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = AmberGold,
+    unfocusedBorderColor = StudioBorder,
+    disabledBorderColor = StudioBorder.copy(alpha = 0.5f),
+    focusedTextColor = IvoryPrimary,
+    unfocusedTextColor = IvoryPrimary,
+    disabledTextColor = WarmSilver,
+    focusedLabelColor = AmberGold,
+    unfocusedLabelColor = MutedStone,
+    disabledLabelColor = MutedStone
+)
 
 @Composable
 internal fun SectionCard(

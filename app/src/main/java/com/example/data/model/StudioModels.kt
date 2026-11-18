@@ -529,3 +529,49 @@ data class StudioIntelligenceReport(
     val topSoundscapes: List<PatternMetric>,
     val enhancements: List<DirectorialEnhancement>
 )
+
+data class AttachedSourceFile(
+    val filename: String,
+    val mimeType: String,
+    val bytes: ByteArray
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is AttachedSourceFile) return false
+        return filename == other.filename && mimeType == other.mimeType && bytes.contentEquals(other.bytes)
+    }
+
+    override fun hashCode(): Int {
+        var result = filename.hashCode()
+        result = 31 * result + mimeType.hashCode()
+        result = 31 * result + bytes.contentHashCode()
+        return result
+    }
+}
+
+data class IngestDraftState(
+    val sequenceTitle: String = "",
+    val sourceType: SourceMaterialType = SourceMaterialType.BOOK,
+    val directorStyle: String = "Épica Monumental IMAX",
+    val aspectRatio: String = "2.39:1",
+    val thinkingDepth: ThinkingDepth = ThinkingDepth.STANDARD,
+    val continuityBible: String = "",
+    val bibleInitialized: Boolean = false,
+    val sourceText: String = "",
+    val attachedFile: AttachedSourceFile? = null,
+    val fileError: String? = null,
+    val ingestError: String? = null
+)
+
+data class DirectorDraftEdits(
+    val directorStyle: String = "",
+    val aspectRatio: String = "2.39:1",
+    val cameraSystem: String = "",
+    val lensPackage: String = "",
+    val filmStockOrLut: String = "",
+    val colorTempKelvin: String = "",
+    val directorVision: String = "",
+    val continuityBible: String = "",
+    val isDirty: Boolean = false
+)
+

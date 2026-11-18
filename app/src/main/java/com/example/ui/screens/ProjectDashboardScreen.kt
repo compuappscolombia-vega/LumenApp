@@ -97,7 +97,7 @@ import com.google.firebase.auth.FirebaseUser
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectDashboardScreen(
-    currentUser: FirebaseUser,
+    currentUser: FirebaseUser?,
     projects: List<ProductionProject>,
     activeProjectId: String,
     searchQuery: String,
@@ -310,7 +310,7 @@ fun ProjectDashboardScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Director: ${currentUser.displayName ?: "LumenReel"}",
+                                        text = "Director: ${currentUser?.displayName ?: "Estudio Local (Sin sesión)"}",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = IvoryPrimary,
                                         maxLines = 1,

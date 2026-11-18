@@ -58,6 +58,7 @@ import com.example.ui.theme.ObsidianBg
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioCard
 import com.example.ui.theme.TealAtmos
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -70,6 +71,7 @@ fun AuthScreen(
     val scope = rememberCoroutineScope()
     var isBusy by remember { mutableStateOf(false) }
     var attemptedSilent by remember { mutableStateOf(false) }
+    var silentJob by remember { mutableStateOf<Job?>(null) }
     var authError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -78,9 +80,11 @@ fun AuthScreen(
             // Let the first SurfaceSyncGroup frame transaction commit before CredentialManager IPC
             withFrameNanos { }
             delay(180L)
-            val user = authRepository.attemptAutoSignIn(context)
-            if (user != null) {
-                onSignedIn()
+            silentJob = launch {
+                val user = authRepository.attemptAutoSignIn(context)
+                if (user != null) {
+                    onSignedIn()
+                }
             }
         }
     }
@@ -213,14 +217,25 @@ fun AuthScreen(
                         Surface(
                             color = MaterialTheme.colorScheme.errorContainer,
                             shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("auth_error_banner")
                         ) {
-                            Text(
-                                text = authError!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(12.dp)
-                            )
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = authError!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = stringResource(R.string.auth_troubleshooting_hint),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                                )
+                            }
                         }
                     }
 
@@ -229,17 +244,16 @@ fun AuthScreen(
                             if (isBusy) return@Button
                             authError = null
                             isBusy = true
+                            silentJob?.cancel()
+                            silentJob = null
                             scope.launch {
                                 val res = authRepository.signInInteractive(context)
                                 isBusy = false
                                 res.onSuccess {
                                     onSignedIn()
                                 }.onFailure { err ->
-                                    authError = if (err is AuthRepository.CancelledAuthException) {
-                                        context.getString(R.string.auth_error_cancelled)
-                                    } else {
-                                        err.localizedMessage ?: "No se pudo completar Google Sign-In."
-                                    }
+                                    authError = err.localizedMessage
+                                        ?: context.getString(R.string.auth_error_cancelled)
                                 }
                             }
                         },

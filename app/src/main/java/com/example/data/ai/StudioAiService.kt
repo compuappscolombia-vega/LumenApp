@@ -77,7 +77,47 @@ data class AgentChatOutcome(
     val bibleChanged: Boolean
 )
 
-class StudioAiService {
+interface StudioAiClient {
+    suspend fun analyzeAudio(
+        filename: String,
+        mimeType: String,
+        audioBytes: ByteArray,
+        learningContext: String
+    ): AudioAnalysisReport
+
+    suspend fun produceSequence(
+        userId: String,
+        project: ProductionProject,
+        sequenceTitle: String,
+        sourceType: SourceMaterialType,
+        directorStyle: String,
+        aspectRatio: String,
+        thinkingDepth: ThinkingDepth,
+        continuityBible: String,
+        sourceText: String,
+        learningContext: String,
+        attachedFilename: String?,
+        attachedMimeType: String?,
+        attachedBytes: ByteArray?
+    ): ProductionSequence
+
+    suspend fun chatWithAgent(
+        project: ProductionProject,
+        activeSequence: ProductionSequence?,
+        focus: AgentRoleFocus,
+        userMessage: String,
+        learningContext: String,
+        recentHistory: List<AgentMessage>
+    ): AgentChatOutcome
+
+    suspend fun generateStoryboardImage(
+        context: Context,
+        frame: StoryboardCard,
+        sequenceAspectRatio: String
+    ): String
+}
+
+class StudioAiService : StudioAiClient {
 
     private val audioAnalysisSchema: Schema by lazy {
         Schema.obj(
@@ -302,7 +342,7 @@ class StudioAiService {
         )
     }
 
-    suspend fun analyzeAudio(
+    override suspend fun analyzeAudio(
         filename: String,
         mimeType: String,
         audioBytes: ByteArray,
@@ -310,6 +350,10 @@ class StudioAiService {
     ): AudioAnalysisReport {
         require(audioBytes.size <= MAX_INLINE_BYTES) {
             "El archivo de audio excede el límite de 19 MB para envío directo."
+        }
+        val effectiveMime = resolveSourceMimeType(mimeType, filename)
+        require(effectiveMime.startsWith("audio/")) {
+            "El archivo seleccionado ($filename) no corresponde a un formato de audio compatible."
         }
         val prompt = """Analiza este archivo de audio cinematográfico ($filename).
 MEMORIA DE AUTOAPRENDIZAJE DEL ESTUDIO:
@@ -326,7 +370,7 @@ Genera un informe JSON profesional en español con:
         val response = withTimeout(60_000L) {
             audioAnalysisModel.generateContent(
                 content {
-                    inlineData(audioBytes, mimeType)
+                    inlineData(audioBytes, effectiveMime)
                     text(prompt)
                 }
             )
@@ -336,7 +380,7 @@ Genera un informe JSON profesional en español con:
         return parseAudioAnalysis(JSONObject(jsonText))
     }
 
-    suspend fun produceSequence(
+    override suspend fun produceSequence(
         userId: String,
         project: ProductionProject,
         sequenceTitle: String,
@@ -351,16 +395,21 @@ Genera un informe JSON profesional en español con:
         attachedMimeType: String?,
         attachedBytes: ByteArray?
     ): ProductionSequence {
-        val isBinaryAttachment = attachedBytes != null && attachedMimeType != null &&
-            !attachedMimeType.startsWith("text/")
+        val effectiveMime = resolveSourceMimeType(attachedMimeType, attachedFilename)
+        val isTextAttachment = attachedBytes != null && isTextSourceFile(effectiveMime, attachedFilename)
+        val isBinaryAttachment = attachedBytes != null && !isTextAttachment
+
         if (attachedBytes != null && isBinaryAttachment) {
+            require(effectiveMime == "application/pdf" || effectiveMime.startsWith("audio/")) {
+                "Tipo de archivo no compatible ($effectiveMime). Usa PDF, TXT, MD, Fountain o audio MP3/WAV/M4A."
+            }
             require(attachedBytes.size <= MAX_INLINE_BYTES) {
                 "El archivo adjunto excede el máximo de 19 MB en línea."
             }
         }
-        val isAudio = isAudioMimeOrName(attachedMimeType, attachedFilename)
-        val decodedTextAttachment = if (attachedBytes != null && !isBinaryAttachment) {
-            attachedBytes.toString(Charsets.UTF_8)
+        val isAudio = isAudioMimeOrName(effectiveMime, attachedFilename)
+        val decodedTextAttachment = if (attachedBytes != null && isTextAttachment) {
+            attachedBytes.toString(Charsets.UTF_8).take(120_000)
         } else null
 
         val combinedText = buildString {
@@ -396,13 +445,13 @@ $audioNote
 MATERIAL FUENTE ESCRITO / NOTAS DEL CLIENTE:
 ${combinedText.ifBlank { "[El material fuente principal está adjunto como archivo binario PDF o Audio. Procésalo íntegramente.]" }}
 
-Genera el expediente completo de dirección en JSON estructurado siguiendo el esquema solicitado. Incluye al menos 4 planos en shotList, al menos 1 escena detallada con múltiples beats (action, camera, sound, dialogue) en screenplay, y 3 tarjetas de storyboardFrames."""
+Genera el expediente completo de dirección en JSON estructurado siguiendo el esquema solicitado. Incluye de 4 a 6 planos en shotList, de 1 a 2 escenas completas con múltiples beats (action, camera, sound, dialogue) en screenplay, y 3 tarjetas en storyboardFrames."""
 
         val response = withTimeout(60_000L) {
             productionModel.generateContent(
                 content {
                     if (isBinaryAttachment) {
-                        inlineData(attachedBytes!!, attachedMimeType!!)
+                        inlineData(attachedBytes, effectiveMime)
                     }
                     text(prompt)
                 }
@@ -410,7 +459,16 @@ Genera el expediente completo de dirección en JSON estructurado siguiendo el es
         }
 
         val jsonText = response.text?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("El motor cinematográfico devolvió una respuesta vacía.")
+            ?: run {
+                val reason = response.candidates.firstOrNull()?.finishReason?.toString()
+                throw IllegalStateException(
+                    if (!reason.isNullOrBlank()) {
+                        "El motor cinematográfico no devolvió contenido (motivo: $reason)."
+                    } else {
+                        "El motor cinematográfico devolvió una respuesta vacía."
+                    }
+                )
+            }
 
         return parseProducedSequence(
             json = JSONObject(jsonText),
@@ -424,7 +482,7 @@ Genera el expediente completo de dirección en JSON estructurado siguiendo el es
         )
     }
 
-    suspend fun chatWithAgent(
+    override suspend fun chatWithAgent(
         project: ProductionProject,
         activeSequence: ProductionSequence?,
         focus: AgentRoleFocus,
@@ -511,7 +569,7 @@ Genera el expediente completo de dirección en JSON estructurado siguiendo el es
         )
     }
 
-    suspend fun generateStoryboardImage(
+    override suspend fun generateStoryboardImage(
         context: Context,
         frame: StoryboardCard,
         sequenceAspectRatio: String
@@ -563,6 +621,33 @@ Genera el expediente completo de dirección en JSON estructurado siguiendo el es
         }
         is JsonArray -> element.map { jsonElementToKotlin(it) }
         is JsonObject -> element.mapValues { (_, v) -> jsonElementToKotlin(v) }
+    }
+
+    private fun resolveSourceMimeType(rawMime: String?, filename: String?): String {
+        val cleanMime = rawMime?.trim()?.lowercase().orEmpty()
+        val lower = filename?.trim()?.lowercase().orEmpty()
+        return when {
+            lower.endsWith(".pdf") -> "application/pdf"
+            lower.endsWith(".mp3") -> "audio/mpeg"
+            lower.endsWith(".wav") -> "audio/wav"
+            lower.endsWith(".m4a") -> "audio/mp4"
+            lower.endsWith(".ogg") -> "audio/ogg"
+            lower.endsWith(".aac") -> "audio/aac"
+            lower.endsWith(".flac") -> "audio/flac"
+            lower.endsWith(".webm") -> "audio/webm"
+            listOf(".txt", ".md", ".markdown", ".fountain", ".srt", ".vtt", ".csv", ".json")
+                .any { lower.endsWith(it) } -> "text/plain"
+            cleanMime.isNotBlank() && cleanMime != "application/octet-stream" -> cleanMime
+            else -> "application/octet-stream"
+        }
+    }
+
+    private fun isTextSourceFile(mime: String?, filename: String?): Boolean {
+        val m = mime?.lowercase().orEmpty()
+        if (m.startsWith("text/") || m == "application/json") return true
+        val lower = filename?.trim()?.lowercase().orEmpty()
+        return listOf(".txt", ".md", ".markdown", ".fountain", ".srt", ".vtt", ".csv", ".json")
+            .any { lower.endsWith(it) }
     }
 
     private fun isAudioMimeOrName(mime: String?, filename: String?): Boolean {

@@ -1,45 +1,57 @@
 package com.example.ui.components
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,13 +59,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.R
+import com.example.data.model.AttachedSourceFile
 import com.example.data.model.AudioAnalysisReport
+import com.example.data.model.IngestDraftState
 import com.example.data.model.ProductionProject
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.ThinkingDepth
@@ -74,90 +91,90 @@ import com.example.ui.theme.WarmSilver
 
 private const val MAX_FILE_BYTES = 19 * 1024 * 1024
 
-data class AttachedSourceFile(
-    val filename: String,
-    val mimeType: String,
-    val bytes: ByteArray
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SourceIngestModalSheet(
     project: ProductionProject,
+    draft: IngestDraftState,
     isProducing: Boolean,
     isAnalyzingAudio: Boolean,
     latestAudioReport: AudioAnalysisReport?,
+    onDraftChange: ((IngestDraftState) -> IngestDraftState) -> Unit,
     onDismiss: () -> Unit,
     onSaveBible: (String) -> Unit,
     onAnalyzeAudio: (AttachedSourceFile) -> Unit,
-    onProduceSequence: (
-        sequenceTitle: String,
-        sourceType: SourceMaterialType,
-        directorStyle: String,
-        aspectRatio: String,
-        thinkingDepth: ThinkingDepth,
-        continuityBible: String,
-        sourceText: String,
-        attachedFile: AttachedSourceFile?
-    ) -> Unit
+    onProduceSequence: () -> Unit,
+    onCreateManualDraft: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = StudioCard,
-        contentColor = IvoryPrimary
-    ) {
-        SourceIngestContent(
-            project = project,
-            isProducing = isProducing,
-            isAnalyzingAudio = isAnalyzingAudio,
-            latestAudioReport = latestAudioReport,
-            onClose = onDismiss,
-            onSaveBible = onSaveBible,
-            onAnalyzeAudio = onAnalyzeAudio,
-            onProduceSequence = onProduceSequence
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
         )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.65f))
+                .statusBarsPadding()
+                .imePadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Surface(
+                color = StudioCard,
+                contentColor = IvoryPrimary,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+                    .navigationBarsPadding()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+            ) {
+                SourceIngestContent(
+                    project = project,
+                    draft = draft,
+                    isProducing = isProducing,
+                    isAnalyzingAudio = isAnalyzingAudio,
+                    latestAudioReport = latestAudioReport,
+                    onDraftChange = onDraftChange,
+                    onClose = onDismiss,
+                    onSaveBible = onSaveBible,
+                    onAnalyzeAudio = onAnalyzeAudio,
+                    onProduceSequence = onProduceSequence,
+                    onCreateManualDraft = onCreateManualDraft
+                )
+            }
+        }
     }
 }
 
 @Composable
 fun SourceIngestContent(
     project: ProductionProject,
+    draft: IngestDraftState,
     isProducing: Boolean,
     isAnalyzingAudio: Boolean,
     latestAudioReport: AudioAnalysisReport?,
+    onDraftChange: ((IngestDraftState) -> IngestDraftState) -> Unit,
     onClose: (() -> Unit)?,
     onSaveBible: (String) -> Unit,
     onAnalyzeAudio: (AttachedSourceFile) -> Unit,
-    onProduceSequence: (
-        sequenceTitle: String,
-        sourceType: SourceMaterialType,
-        directorStyle: String,
-        aspectRatio: String,
-        thinkingDepth: ThinkingDepth,
-        continuityBible: String,
-        sourceText: String,
-        attachedFile: AttachedSourceFile?
-    ) -> Unit,
+    onProduceSequence: () -> Unit,
+    onCreateManualDraft: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val initialPreset = remember(project.id) {
-        StudioLogic.DIRECTOR_STYLES.firstOrNull {
-            project.genreStyle.contains(it.label, ignoreCase = true)
-        } ?: StudioLogic.DIRECTOR_STYLES.first()
-    }
-
-    var sequenceTitle by remember(project.id) { mutableStateOf("") }
-    var sourceType by remember(project.id) { mutableStateOf(project.defaultSourceType) }
-    var selectedStyle by remember(project.id) { mutableStateOf(initialPreset.label) }
-    var aspectRatio by remember(project.id) { mutableStateOf(initialPreset.defaultRatio) }
-    var thinkingDepth by remember(project.id) { mutableStateOf(ThinkingDepth.STANDARD) }
-    var continuityBible by remember(project.id, project.continuityBible) { mutableStateOf(project.continuityBible) }
-    var sourceText by remember(project.id) { mutableStateOf("") }
-    var attachedFile by remember(project.id) { mutableStateOf<AttachedSourceFile?>(null) }
-    var fileError by remember { mutableStateOf<String?>(null) }
+    var clipboardNotice by remember { mutableStateOf<String?>(null) }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -165,25 +182,34 @@ fun SourceIngestContent(
         if (uri != null) {
             readSourceUri(context, uri)
                 .onSuccess { file ->
-                    attachedFile = file
-                    fileError = null
-                    if (file.mimeType.startsWith("audio/")) {
-                        sourceType = SourceMaterialType.AUDIOBOOK
-                    }
-                    if (sequenceTitle.isBlank()) {
-                        sequenceTitle = file.filename.substringBeforeLast('.').take(80)
+                    clipboardNotice = null
+                    val nextType = if (isAudioFile(file)) SourceMaterialType.AUDIOBOOK else draft.sourceType
+                    val nextTitle = if (draft.sequenceTitle.isBlank()) {
+                        file.filename.substringBeforeLast('.').take(80)
+                    } else draft.sequenceTitle
+                    onDraftChange {
+                        it.copy(
+                            attachedFile = file,
+                            fileError = null,
+                            ingestError = null,
+                            sourceType = nextType,
+                            sequenceTitle = nextTitle
+                        )
                     }
                 }
                 .onFailure { err ->
-                    fileError = err.localizedMessage ?: "No se pudo leer el archivo."
+                    onDraftChange {
+                        it.copy(fileError = err.localizedMessage ?: "No se pudo leer el archivo.")
+                    }
                 }
         }
     }
 
-    val isAudioAttached = attachedFile?.let { f ->
-        f.mimeType.startsWith("audio/") || listOf(".mp3", ".wav", ".m4a", ".ogg", ".aac")
-            .any { f.filename.lowercase().endsWith(it) }
-    } == true
+    val attachedFile = draft.attachedFile
+    val isAudioAttached = attachedFile != null && isAudioFile(attachedFile)
+    val isTextFileAttached = attachedFile != null && !isAudioAttached &&
+        !attachedFile.filename.lowercase().endsWith(".pdf") &&
+        attachedFile.mimeType != "application/pdf"
 
     Column(
         modifier = modifier
@@ -197,11 +223,18 @@ fun SourceIngestContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = stringResource(R.string.ingest_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = AmberGold
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.ingest_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AmberGold
+                )
+                Text(
+                    text = project.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MutedStone
+                )
+            }
             if (onClose != null) {
                 IconButton(onClick = onClose, modifier = Modifier.testTag("ingest_close_button")) {
                     Icon(
@@ -215,8 +248,10 @@ fun SourceIngestContent(
 
         // Sequence Title
         OutlinedTextField(
-            value = sequenceTitle,
-            onValueChange = { sequenceTitle = it },
+            value = draft.sequenceTitle,
+            onValueChange = { value ->
+                onDraftChange { it.copy(sequenceTitle = value, ingestError = null) }
+            },
             label = { Text(stringResource(R.string.ingest_seq_title_label)) },
             placeholder = { Text(stringResource(R.string.ingest_seq_title_hint), color = MutedStone) },
             singleLine = true,
@@ -237,10 +272,10 @@ fun SourceIngestContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SourceMaterialType.entries.forEach { type ->
-                val selected = sourceType == type
+                val selected = draft.sourceType == type
                 FilterChip(
                     selected = selected,
-                    onClick = { sourceType = type },
+                    onClick = { onDraftChange { it.copy(sourceType = type) } },
                     label = {
                         Text(
                             text = when (type) {
@@ -270,12 +305,16 @@ fun SourceIngestContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             StudioLogic.DIRECTOR_STYLES.forEach { preset ->
-                val selected = selectedStyle == preset.label
+                val selected = draft.directorStyle == preset.label
                 FilterChip(
                     selected = selected,
                     onClick = {
-                        selectedStyle = preset.label
-                        aspectRatio = preset.defaultRatio
+                        onDraftChange {
+                            it.copy(
+                                directorStyle = preset.label,
+                                aspectRatio = preset.defaultRatio
+                            )
+                        }
                     },
                     label = { Text(preset.label, style = MaterialTheme.typography.labelSmall) },
                     colors = chipColors(),
@@ -298,8 +337,8 @@ fun SourceIngestContent(
         ) {
             StudioLogic.ASPECT_RATIO_OPTIONS.forEach { (ratio, label) ->
                 FilterChip(
-                    selected = aspectRatio == ratio,
-                    onClick = { aspectRatio = ratio },
+                    selected = draft.aspectRatio == ratio,
+                    onClick = { onDraftChange { it.copy(aspectRatio = ratio) } },
                     label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                     colors = chipColors(),
                     modifier = Modifier.testTag("aspect_ratio_$ratio")
@@ -315,22 +354,22 @@ fun SourceIngestContent(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
-                selected = thinkingDepth == ThinkingDepth.STANDARD,
-                onClick = { thinkingDepth = ThinkingDepth.STANDARD },
+                selected = draft.thinkingDepth == ThinkingDepth.STANDARD,
+                onClick = { onDraftChange { it.copy(thinkingDepth = ThinkingDepth.STANDARD) } },
                 label = { Text(stringResource(R.string.ingest_depth_standard)) },
                 colors = chipColors(),
                 modifier = Modifier.testTag("depth_standard")
             )
             FilterChip(
-                selected = thinkingDepth == ThinkingDepth.DEEP,
-                onClick = { thinkingDepth = ThinkingDepth.DEEP },
+                selected = draft.thinkingDepth == ThinkingDepth.DEEP,
+                onClick = { onDraftChange { it.copy(thinkingDepth = ThinkingDepth.DEEP) } },
                 label = { Text(stringResource(R.string.ingest_depth_deep)) },
                 colors = chipColors(),
                 modifier = Modifier.testTag("depth_deep")
             )
         }
 
-        // File Attachment (SAF OpenDocument)
+        // File Attachment (SAF OpenDocument with */* so PC-transferred .txt/.md/.fountain are never greyed out)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -338,9 +377,7 @@ fun SourceIngestContent(
         ) {
             OutlinedButton(
                 onClick = {
-                    openDocumentLauncher.launch(
-                        arrayOf("application/pdf", "text/*", "audio/*")
-                    )
+                    openDocumentLauncher.launch(arrayOf("*/*"))
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -362,7 +399,7 @@ fun SourceIngestContent(
             }
             if (attachedFile != null) {
                 IconButton(
-                    onClick = { attachedFile = null },
+                    onClick = { onDraftChange { it.copy(attachedFile = null, fileError = null) } },
                     modifier = Modifier.testTag("clear_source_file_button")
                 ) {
                     Icon(
@@ -374,14 +411,44 @@ fun SourceIngestContent(
             }
         }
 
-        if (fileError != null) {
+        Text(
+            text = "Formatos: PDF, TXT, MD, Fountain, SRT o Audio (MP3/WAV/M4A). Desde tu PC, arrastra el archivo sobre la ventana del emulador para guardarlo en Descargas y selecciónalo aquí.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MutedStone
+        )
+
+        if (isTextFileAttached) {
+            OutlinedButton(
+                onClick = {
+                    val decoded = attachedFile.bytes.toString(Charsets.UTF_8).take(120_000)
+                    onDraftChange {
+                        val merged = if (it.sourceText.isBlank()) decoded else "${it.sourceText.trim()}\n\n$decoded"
+                        it.copy(sourceText = merged, ingestError = null)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("import_attached_text_button")
+            ) {
+                Text(
+                    text = "Copiar contenido de ${attachedFile.filename} al campo de texto",
+                    color = TealAtmos,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+
+        if (draft.fileError != null) {
             Surface(
                 color = ErrorContainerDark,
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ingest_file_error_banner")
             ) {
                 Text(
-                    text = fileError!!,
+                    text = draft.fileError,
                     style = MaterialTheme.typography.bodySmall,
                     color = ErrorLightText,
                     modifier = Modifier.padding(10.dp)
@@ -389,9 +456,9 @@ fun SourceIngestContent(
             }
         }
 
-        if (isAudioAttached && attachedFile != null) {
+        if (isAudioAttached) {
             OutlinedButton(
-                onClick = { onAnalyzeAudio(attachedFile!!) },
+                onClick = { onAnalyzeAudio(attachedFile) },
                 enabled = !isAnalyzingAudio && !isProducing,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -439,11 +506,70 @@ fun SourceIngestContent(
             }
         }
 
-        // Source Text Input
+        // Source Text Input + Explicit Paste & Sample controls
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.ingest_text_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = WarmSilver
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    onClick = {
+                        val clip = readClipboardText(context)
+                        if (clip.isNullOrBlank()) {
+                            clipboardNotice = "El portapapeles está vacío. Copia primero un texto o toca «Ejemplo»."
+                        } else {
+                            clipboardNotice = "Texto pegado (${clip.length} caracteres)."
+                            onDraftChange {
+                                val next = if (it.sourceText.isBlank()) clip else "${it.sourceText.trim()}\n\n$clip"
+                                it.copy(sourceText = next, ingestError = null)
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("ingest_paste_source_button")
+                ) {
+                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(4.dp))
+                    Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                }
+                TextButton(
+                    onClick = {
+                        clipboardNotice = null
+                        onDraftChange {
+                            it.copy(
+                                sequenceTitle = it.sequenceTitle.ifBlank { StudioLogic.SAMPLE_SEQUENCE_TITLE },
+                                sourceText = StudioLogic.SAMPLE_SOURCE_TEXT,
+                                ingestError = null
+                            )
+                        }
+                    },
+                    modifier = Modifier.testTag("ingest_load_sample_button")
+                ) {
+                    Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(4.dp))
+                    Text("Ejemplo", color = TealAtmos, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+
+        if (clipboardNotice != null) {
+            Text(
+                text = clipboardNotice!!,
+                style = MaterialTheme.typography.labelSmall,
+                color = TealAtmos
+            )
+        }
+
         OutlinedTextField(
-            value = sourceText,
-            onValueChange = { sourceText = it },
-            label = { Text(stringResource(R.string.ingest_text_label)) },
+            value = draft.sourceText,
+            onValueChange = { value ->
+                onDraftChange { it.copy(sourceText = value, ingestError = null) }
+            },
             placeholder = { Text(stringResource(R.string.ingest_text_hint), color = MutedStone) },
             minLines = 4,
             maxLines = 8,
@@ -473,10 +599,29 @@ fun SourceIngestContent(
                     Text(
                         text = stringResource(R.string.bible_title),
                         style = MaterialTheme.typography.labelLarge,
-                        color = IvoryPrimary
+                        color = IvoryPrimary,
+                        modifier = Modifier.weight(1f)
                     )
+                    TextButton(
+                        onClick = {
+                            val clip = readClipboardText(context)
+                            if (clip.isNullOrBlank()) {
+                                clipboardNotice = "El portapapeles está vacío."
+                            } else {
+                                onDraftChange {
+                                    val next = if (it.continuityBible.isBlank()) clip else "${it.continuityBible.trim()}\n\n$clip"
+                                    it.copy(continuityBible = next)
+                                }
+                            }
+                        },
+                        modifier = Modifier.testTag("ingest_paste_bible_button")
+                    ) {
+                        Icon(Icons.Rounded.ContentPaste, contentDescription = "Pegar en Biblia", tint = WarmSilver, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Pegar", color = WarmSilver, style = MaterialTheme.typography.labelSmall)
+                    }
                     OutlinedButton(
-                        onClick = { onSaveBible(continuityBible) },
+                        onClick = { onSaveBible(draft.continuityBible) },
                         modifier = Modifier.testTag("save_bible_button")
                     ) {
                         Icon(Icons.Rounded.Save, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
@@ -485,8 +630,10 @@ fun SourceIngestContent(
                     }
                 }
                 OutlinedTextField(
-                    value = continuityBible,
-                    onValueChange = { continuityBible = it },
+                    value = draft.continuityBible,
+                    onValueChange = { value ->
+                        onDraftChange { it.copy(continuityBible = value) }
+                    },
                     placeholder = { Text(stringResource(R.string.bible_hint), color = MutedStone) },
                     minLines = 3,
                     maxLines = 6,
@@ -498,20 +645,27 @@ fun SourceIngestContent(
             }
         }
 
-        // Produce Sequence CTA
-        Button(
-            onClick = {
-                onProduceSequence(
-                    sequenceTitle,
-                    sourceType,
-                    selectedStyle,
-                    aspectRatio,
-                    thinkingDepth,
-                    continuityBible,
-                    sourceText,
-                    attachedFile
+        // Visible Validation / AI Error directly inside sheet
+        if (!draft.ingestError.isNullOrBlank()) {
+            Surface(
+                color = ErrorContainerDark,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ingest_error_banner")
+            ) {
+                Text(
+                    text = draft.ingestError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ErrorLightText,
+                    modifier = Modifier.padding(12.dp)
                 )
-            },
+            }
+        }
+
+        // Primary CTA: Produce with Gemini AI
+        Button(
+            onClick = onProduceSequence,
             enabled = !isProducing && !isAnalyzingAudio,
             colors = ButtonDefaults.buttonColors(
                 containerColor = AmberGold,
@@ -532,6 +686,21 @@ fun SourceIngestContent(
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.ingest_produce_cta), fontWeight = FontWeight.Bold)
             }
+        }
+
+        // Secondary CTA: Create Manual Editable Draft (no AI)
+        OutlinedButton(
+            onClick = onCreateManualDraft,
+            enabled = !isProducing && !isAnalyzingAudio,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("create_manual_draft_button")
+        ) {
+            Icon(Icons.Rounded.EditNote, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(8.dp))
+            Text("Crear borrador manual (sin IA) en Guion", color = TealAtmos, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -556,6 +725,19 @@ private fun chipColors() = FilterChipDefaults.filterChipColors(
     labelColor = WarmSilver
 )
 
+internal fun readClipboardText(context: Context): String? {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+    val clip = cm.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()?.takeIf { it.isNotBlank() }
+}
+
+private fun isAudioFile(file: AttachedSourceFile): Boolean {
+    val lower = file.filename.lowercase()
+    return file.mimeType.startsWith("audio/") ||
+        listOf(".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac", ".webm").any { lower.endsWith(it) }
+}
+
 private fun readSourceUri(context: Context, uri: Uri): Result<AttachedSourceFile> {
     return try {
         val resolver = context.contentResolver
@@ -568,6 +750,13 @@ private fun readSourceUri(context: Context, uri: Uri): Result<AttachedSourceFile
                     name = cursor.getString(idx) ?: name
                 }
             }
+        }
+        if (!StudioLogic.isSupportedSourceFile(name, mime)) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "Archivo «$name» no compatible. Usa PDF, TXT, MD, Fountain, SRT o audio MP3/WAV/M4A."
+                )
+            )
         }
         val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
             ?: return Result.failure(IllegalStateException("No se pudo abrir el stream del archivo."))

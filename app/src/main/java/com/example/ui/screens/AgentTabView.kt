@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,12 +42,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,6 +53,7 @@ import com.example.data.model.AgentRoleFocus
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.util.AgentLogic
+import com.example.ui.components.readClipboardText
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.IvoryPrimary
@@ -72,13 +72,16 @@ fun AgentTabView(
     project: ProductionProject,
     activeSequence: ProductionSequence?,
     messages: List<AgentMessage>,
+    selectedFocus: AgentRoleFocus,
+    draftMessage: String,
     isBusy: Boolean,
+    onFocusChange: (AgentRoleFocus) -> Unit,
+    onDraftChange: (String) -> Unit,
     onSendMessage: (AgentRoleFocus, String) -> Unit,
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedFocus by remember(project.id) { mutableStateOf(AgentRoleFocus.COUNCIL) }
-    var draftMessage by remember(project.id) { mutableStateOf("") }
+    val context = LocalContext.current
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {
@@ -90,6 +93,7 @@ fun AgentTabView(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -161,7 +165,7 @@ fun AgentTabView(
                 val selected = selectedFocus == profile.id
                 FilterChip(
                     selected = selected,
-                    onClick = { selectedFocus = profile.id },
+                    onClick = { onFocusChange(profile.id) },
                     label = {
                         Text(
                             text = profile.label,
@@ -238,7 +242,7 @@ fun AgentTabView(
                                         .fillMaxWidth()
                                         .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
                                         .clickable(enabled = !isBusy) {
-                                            selectedFocus = cmd.focus
+                                            onFocusChange(cmd.focus)
                                             onSendMessage(cmd.focus, cmd.prompt)
                                         }
                                         .testTag("agent_quick_${cmd.id}")
@@ -305,7 +309,7 @@ fun AgentTabView(
         ) {
             OutlinedTextField(
                 value = draftMessage,
-                onValueChange = { draftMessage = it },
+                onValueChange = onDraftChange,
                 placeholder = {
                     Text(
                         text = "Pide cambios de dirección, guion, VFX/SFX o Biblia…",
@@ -328,6 +332,31 @@ fun AgentTabView(
                     .testTag("agent_message_input")
             )
             Surface(
+                color = StudioCard,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .size(52.dp)
+                    .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+            ) {
+                IconButton(
+                    onClick = {
+                        val clip = readClipboardText(context) ?: return@IconButton
+                        val next = if (draftMessage.isBlank()) clip else "${draftMessage.trim()} $clip"
+                        onDraftChange(next)
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("agent_paste_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentPaste,
+                        contentDescription = "Pegar texto del portapapeles",
+                        tint = WarmSilver
+                    )
+                }
+            }
+            Surface(
                 color = if (draftMessage.isNotBlank() && !isBusy) AmberGold else StudioSurfaceElevated,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.size(52.dp)
@@ -336,7 +365,7 @@ fun AgentTabView(
                     onClick = {
                         val text = draftMessage.trim()
                         if (text.isNotEmpty() && !isBusy) {
-                            draftMessage = ""
+                            onDraftChange("")
                             onSendMessage(selectedFocus, text)
                         }
                     },

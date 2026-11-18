@@ -44,23 +44,30 @@ import java.util.UUID
 
 class StudioRepository(
     private val firestoreProvider: () -> FirebaseFirestore,
-    private val authProvider: () -> FirebaseAuth = { Firebase.auth }
+    private val authProvider: () -> FirebaseAuth = { Firebase.auth },
+    private val localStore: LocalStudioStore? = null
 ) {
     constructor(db: FirebaseFirestore, auth: FirebaseAuth = Firebase.auth) : this(
         firestoreProvider = { db },
-        authProvider = { auth }
+        authProvider = { auth },
+        localStore = null
     )
 
-    constructor(databaseId: String) : this(
-        firestoreProvider = { FirebaseFirestore.getInstance(databaseId) }
+    constructor(databaseId: String, localStore: LocalStudioStore? = null) : this(
+        firestoreProvider = { FirebaseFirestore.getInstance(databaseId) },
+        localStore = localStore
     )
 
     constructor(context: Context) : this(
-        databaseId = context.applicationContext.getString(R.string.firestore_database_id)
+        databaseId = context.applicationContext.getString(R.string.firestore_database_id),
+        localStore = LocalStudioStore.getInstance(context)
     )
 
     private val db: FirebaseFirestore by lazy { firestoreProvider() }
     private val auth: FirebaseAuth by lazy { authProvider() }
+
+    private fun isLocalMode(userId: String): Boolean =
+        localStore != null && (userId == LOCAL_GUEST_UID || auth.currentUser == null)
 
     private fun requireUserId(expectedUserId: String): String {
         val uid = auth.currentUser?.uid
@@ -74,8 +81,11 @@ class StudioRepository(
         return "${prefix}_${shortUuid}"
     }
 
-    fun observeProjects(userId: String): Flow<List<ProductionProject>> =
-        db.collection("users").document(userId)
+    fun observeProjects(userId: String): Flow<List<ProductionProject>> {
+        if (isLocalMode(userId)) {
+            return localStore!!.observeProjects(userId)
+        }
+        return db.collection("users").document(userId)
             .collection("projects")
             .orderBy("updatedAt", Query.Direction.DESCENDING)
             .snapshots()
@@ -99,9 +109,13 @@ class StudioRepository(
                     )
                 }
             }
+    }
 
-    fun observeSequences(userId: String, projectId: String): Flow<List<ProductionSequence>> =
-        db.collection("users").document(userId)
+    fun observeSequences(userId: String, projectId: String): Flow<List<ProductionSequence>> {
+        if (isLocalMode(userId)) {
+            return localStore!!.observeSequences(projectId)
+        }
+        return db.collection("users").document(userId)
             .collection("projects").document(projectId)
             .collection("sequences")
             .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -109,9 +123,13 @@ class StudioRepository(
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc -> parseSequenceDocument(doc) }
             }
+    }
 
-    fun observeAgentMessages(userId: String, projectId: String): Flow<List<AgentMessage>> =
-        db.collection("users").document(userId)
+    fun observeAgentMessages(userId: String, projectId: String): Flow<List<AgentMessage>> {
+        if (isLocalMode(userId)) {
+            return localStore!!.observeAgentMessages(projectId)
+        }
+        return db.collection("users").document(userId)
             .collection("projects").document(projectId)
             .collection("agent_messages")
             .orderBy("createdAt", Query.Direction.ASCENDING)
@@ -132,9 +150,13 @@ class StudioRepository(
                     )
                 }
             }
+    }
 
-    fun observeLearningLessons(userId: String): Flow<List<LearningLesson>> =
-        db.collection("users").document(userId)
+    fun observeLearningLessons(userId: String): Flow<List<LearningLesson>> {
+        if (isLocalMode(userId)) {
+            return localStore!!.observeLearningLessons()
+        }
+        return db.collection("users").document(userId)
             .collection("learning_memory")
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .snapshots()
@@ -154,6 +176,7 @@ class StudioRepository(
                     )
                 }
             }
+    }
 
     private fun parseSequenceDocument(doc: DocumentSnapshot): ProductionSequence? {
         val data = doc.data ?: return null
@@ -242,6 +265,9 @@ class StudioRepository(
         defaultSourceType: SourceMaterialType,
         continuityBible: String
     ): Result<String> {
+        if (isLocalMode(userId)) {
+            return localStore!!.createProject(userId, title, genreStyle, defaultSourceType, continuityBible)
+        }
         val projectId = newSafeDocId("proj")
         val path = "users/$userId/projects/$projectId"
         return try {
@@ -277,6 +303,9 @@ class StudioRepository(
         projectId: String,
         continuityBible: String
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.updateProjectContinuity(projectId, continuityBible)
+        }
         val path = "users/$userId/projects/$projectId"
         return try {
             requireUserId(userId)
@@ -296,6 +325,9 @@ class StudioRepository(
     }
 
     suspend fun deleteProject(userId: String, projectId: String): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.deleteProject(projectId)
+        }
         val path = "users/$userId/projects/$projectId"
         return try {
             requireUserId(userId)
@@ -327,6 +359,15 @@ class StudioRepository(
         nextContinuityBible: String,
         nextSequencesCount: Int
     ): Result<ProductionSequence> {
+        if (isLocalMode(userId)) {
+            return localStore!!.saveProducedSequence(
+                userId,
+                projectId,
+                sequence,
+                nextContinuityBible,
+                nextSequencesCount
+            )
+        }
         val seqId = sequence.id.ifBlank { newSafeDocId("seq") }
         val seqPath = "users/$userId/projects/$projectId/sequences/$seqId"
         return try {
@@ -383,6 +424,9 @@ class StudioRepository(
         projectId: String,
         sequence: ProductionSequence
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.updateDraftSequence(sequence)
+        }
         val path = "users/$userId/projects/$projectId/sequences/${sequence.id}"
         return try {
             requireUserId(userId)
@@ -408,12 +452,38 @@ class StudioRepository(
         }
     }
 
+    suspend fun saveStoryboardFrameImagePath(
+        userId: String,
+        projectId: String,
+        sequence: ProductionSequence,
+        frameId: String,
+        localImagePath: String
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.updateStoryboardFramePath(sequence.id, frameId, localImagePath)
+        }
+        if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
+            val updatedFrames = sequence.storyboardFrames.map {
+                if (it.id == frameId) it.copy(localImagePath = localImagePath) else it
+            }
+            return updateDraftSequence(
+                userId = userId,
+                projectId = projectId,
+                sequence = sequence.copy(storyboardFrames = updatedFrames)
+            )
+        }
+        return Result.success(Unit)
+    }
+
     suspend fun finalizeSequence(
         userId: String,
         projectId: String,
         projectTitle: String,
         sequence: ProductionSequence
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.finalizeSequence(projectTitle, sequence)
+        }
         val path = "users/$userId/projects/$projectId/sequences/${sequence.id}"
         return try {
             requireUserId(userId)
@@ -453,6 +523,9 @@ class StudioRepository(
         rating: Int,
         note: String
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.rateSequence(projectTitle, sequence, rating, note)
+        }
         val path = "users/$userId/projects/$projectId/sequences/${sequence.id}"
         return try {
             requireUserId(userId)
@@ -498,6 +571,9 @@ class StudioRepository(
         agentContent: String,
         actions: List<AgentToolAction>
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.saveAgentMessagePair(projectId, focus, userContent, agentContent, actions)
+        }
         val colPath = "users/$userId/projects/$projectId/agent_messages"
         return try {
             requireUserId(userId)
@@ -535,6 +611,9 @@ class StudioRepository(
     }
 
     suspend fun clearAgentMessages(userId: String, projectId: String): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.clearAgentMessages(projectId)
+        }
         val colPath = "users/$userId/projects/$projectId/agent_messages"
         return try {
             requireUserId(userId)
@@ -558,6 +637,9 @@ class StudioRepository(
         rating: Int,
         sourceProjectTitle: String
     ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.addLearningLesson(category, insight, rating, sourceProjectTitle)
+        }
         val lessonId = newSafeDocId("lesson")
         val path = "users/$userId/learning_memory/$lessonId"
         return try {
@@ -583,6 +665,9 @@ class StudioRepository(
     }
 
     suspend fun deleteLearningLesson(userId: String, lessonId: String): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.deleteLearningLesson(lessonId)
+        }
         val path = "users/$userId/learning_memory/$lessonId"
         return try {
             requireUserId(userId)

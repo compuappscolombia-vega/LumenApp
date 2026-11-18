@@ -288,4 +288,148 @@ object StudioLogic {
         }
         return lines.joinToString("\n")
     }
+
+    const val SAMPLE_SEQUENCE_TITLE = "Capítulo I: El Faro de Sal"
+    const val SAMPLE_SOURCE_TEXT = "INT. FARO DE SAL - MADRUGADA. La lluvia azota los cristales esmerilados. " +
+        "ELENA (38) ajusta el dial del transmisor antiguo mientras el haz de luz barre un mar negro. " +
+        "De pronto, la radio devuelve un eco metálico: alguien responde desde el arrecife hundido."
+
+    private val SUPPORTED_TEXT_EXTENSIONS = listOf(
+        ".txt", ".md", ".markdown", ".fountain", ".srt", ".vtt", ".csv", ".json"
+    )
+    private val SUPPORTED_AUDIO_EXTENSIONS = listOf(
+        ".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac", ".webm"
+    )
+
+    fun isSupportedSourceFile(filename: String?, mimeType: String?): Boolean {
+        val lowerName = filename?.trim()?.lowercase().orEmpty()
+        val cleanMime = mimeType?.trim()?.lowercase().orEmpty()
+        if (lowerName.endsWith(".pdf") || cleanMime == "application/pdf") return true
+        if (cleanMime.startsWith("text/") || cleanMime == "application/json") return true
+        if (cleanMime.startsWith("audio/")) return true
+        return SUPPORTED_TEXT_EXTENSIONS.any { lowerName.endsWith(it) } ||
+            SUPPORTED_AUDIO_EXTENSIONS.any { lowerName.endsWith(it) }
+    }
+
+    fun buildManualDraftSequence(
+        userId: String,
+        project: ProductionProject,
+        sequenceTitle: String,
+        sourceType: SourceMaterialType,
+        directorStyle: String,
+        aspectRatio: String,
+        sourceText: String,
+        attachedFilename: String? = null,
+        attachedTextPreview: String? = null
+    ): ProductionSequence {
+        val cleanTitle = sequenceTitle.trim()
+            .ifBlank { "Secuencia ${project.sequences.size + 1}" }
+            .take(200)
+        val preset = DIRECTOR_STYLES.firstOrNull {
+            it.label.equals(directorStyle.trim(), ignoreCase = true)
+        } ?: DIRECTOR_STYLES.first()
+        val chosenStyle = directorStyle.trim().ifBlank { preset.label }
+        val chosenRatio = aspectRatio.trim().ifBlank { preset.defaultRatio }
+
+        val rawBody = buildString {
+            if (sourceText.isNotBlank()) append(sourceText.trim())
+            if (!attachedTextPreview.isNullOrBlank()) {
+                if (isNotEmpty()) append("\n\n")
+                append(attachedTextPreview.trim())
+            }
+        }
+        val bodyParagraphs = rawBody
+            .split(Regex("""\n\s*\n"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        val beats = if (bodyParagraphs.isEmpty()) {
+            listOf(
+                com.example.data.model.ScreenplayBeat(
+                    type = "action",
+                    text = "Borrador manual listo para redactar escenas, cámara, sonido y diálogos en la pestaña Guion."
+                )
+            )
+        } else {
+            bodyParagraphs.take(12).map { paragraph ->
+                com.example.data.model.ScreenplayBeat(
+                    type = "action",
+                    text = paragraph.take(2000)
+                )
+            }
+        }
+
+        val initialScene = com.example.data.model.ScreenplayScene(
+            sceneNumber = "1",
+            slugline = "INT. ${cleanTitle.uppercase().take(40)} - NOCHE",
+            timeOfDay = "NOCHE",
+            beats = beats
+        )
+
+        val defaultShot = com.example.data.model.ShotSpec(
+            shotNumber = "01",
+            shotType = "Plano General",
+            lensMm = "35mm",
+            movement = "Estático / Dolly suave",
+            durationSec = 5.0,
+            framingNote = "Encuadre base en $chosenRatio para «$cleanTitle».",
+            psychologicalIntent = "Establecer atmósfera y geografía de la escena."
+        )
+
+        val defaultFrame = com.example.data.model.StoryboardCard(
+            id = "sb_${java.util.UUID.randomUUID().toString().replace("-", "").take(8)}_0",
+            title = "Plano inicial · $cleanTitle",
+            shotRef = "Plano 01",
+            aspectRatio = chosenRatio,
+            cameraSpec = "${preset.defaultCamera} · ${preset.defaultLenses}",
+            visualPrompt = "Wide cinematic film still establishing ${cleanTitle}, moody atmospheric lighting, 65mm film grain.",
+            veoMotionPrompt = "Slow cinematic dolly push in across the set, subtle atmospheric haze."
+        )
+
+        val seqId = "seq_${java.util.UUID.randomUUID().toString().replace("-", "").take(12)}"
+        return ProductionSequence(
+            id = seqId,
+            projectId = project.id,
+            ownerId = userId,
+            title = cleanTitle,
+            versionStatus = com.example.data.model.SequenceVersionStatus.DRAFT,
+            sourceType = sourceType,
+            sourceFilename = attachedFilename,
+            directorStyle = chosenStyle,
+            aspectRatio = chosenRatio,
+            cameraSystem = preset.defaultCamera,
+            lensPackage = preset.defaultLenses,
+            filmStockOrLut = "Kodak 2383 Print LUT",
+            logline = rawBody.lineSequence().firstOrNull()?.trim()?.take(240)
+                ?: "Borrador manual de secuencia cinematográfica «$cleanTitle».",
+            directorVision = "Borrador manual en desarrollo ($chosenStyle · $chosenRatio). Ajusta óptica, iluminación y guion directamente en el estudio.",
+            colorPalette = listOf(
+                com.example.data.model.ColorSwatch("Ámbar Key", "#E5A93C", "Luz principal cálida"),
+                com.example.data.model.ColorSwatch("Acero Nocturno", "#1B2430", "Sombras profundas"),
+                com.example.data.model.ColorSwatch("Teal Atmósfera", "#3BAEA0", "Relleno ambiental")
+            ),
+            lighting = com.example.data.model.LightingSetup(
+                keyLight = "Tungsteno suave lateral a 45°",
+                fillRatio = "4:1 contraste dramático",
+                rimAndBacklight = "Recorte frío en silueta",
+                colorTemperatureKelvin = "3200K / 5600K mixto",
+                atmosphereAndHaze = "Hazer ligero para textura de luz"
+            ),
+            shotList = listOf(defaultShot),
+            soundDesign = com.example.data.model.SoundDesignSpec(
+                atmosLayers = listOf("Ambiente de sala y exterior lejano"),
+                subBassCue = "Pulso subgrave sutil 40 Hz",
+                foleyDetails = listOf("Pasos sobre superficie húmeda", "Respiración contenida"),
+                silenceBeats = "Silencio dramático antes de la réplica clave",
+                musicalScore = "Cuerdas graves minimalistas",
+                tempoBpm = 68
+            ),
+            vfx = com.example.data.model.VfxBreakdown(
+                locationsAndSets = "Set principal configurado según Biblia de Continuidad"
+            ),
+            screenplay = listOf(initialScene),
+            storyboardFrames = listOf(defaultFrame),
+            continuitySummary = "Borrador manual creado para «$cleanTitle»."
+        )
+    }
 }

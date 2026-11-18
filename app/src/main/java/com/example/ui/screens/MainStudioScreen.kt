@@ -98,6 +98,7 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.WorkspaceTab
+import com.example.data.repository.LOCAL_GUEST_UID
 import com.example.data.util.StudioLogic
 import com.example.ui.components.AccountDialog
 import com.example.ui.components.AgentBlueprintDialog
@@ -128,13 +129,17 @@ import java.io.File
 
 @Composable
 fun MainStudioScreen(
-    currentUser: FirebaseUser,
+    currentUser: FirebaseUser?,
+    authStatusMessage: String? = null,
+    onClearAuthStatus: () -> Unit = {},
+    onOptionalGoogleSignIn: () -> Unit = {},
     onSignOut: () -> Unit,
     onShareFile: (File, String) -> Unit
 ) {
+    val activeUid = currentUser?.uid ?: LOCAL_GUEST_UID
     val vm: StudioViewModel = viewModel(
-        key = currentUser.uid,
-        factory = StudioViewModel.provideFactory(currentUser.uid)
+        key = activeUid,
+        factory = StudioViewModel.provideFactory(activeUid)
     )
     val uiState by vm.projectsUiState.collectAsStateWithLifecycle()
 
@@ -174,8 +179,10 @@ fun MainStudioScreen(
                     ) {
                         Text("Error de conexión con el estudio", style = MaterialTheme.typography.titleMedium, color = ErrorLightText)
                         Text(state.message, style = MaterialTheme.typography.bodyMedium, color = IvoryPrimary)
-                        OutlinedButton(onClick = onSignOut) {
-                            Text(stringResource(R.string.action_sign_out), color = IvoryPrimary)
+                        if (currentUser != null) {
+                            OutlinedButton(onClick = onSignOut) {
+                                Text(stringResource(R.string.action_sign_out), color = IvoryPrimary)
+                            }
                         }
                     }
                 }
@@ -184,6 +191,10 @@ fun MainStudioScreen(
         is UiState.Success -> {
             StudioWorkspaceShell(
                 currentUser = currentUser,
+                activeUid = activeUid,
+                authStatusMessage = authStatusMessage,
+                onClearAuthStatus = onClearAuthStatus,
+                onOptionalGoogleSignIn = onOptionalGoogleSignIn,
                 ui = state.data,
                 vm = vm,
                 onSignOut = onSignOut,
@@ -196,7 +207,11 @@ fun MainStudioScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StudioWorkspaceShell(
-    currentUser: FirebaseUser,
+    currentUser: FirebaseUser?,
+    activeUid: String,
+    authStatusMessage: String?,
+    onClearAuthStatus: () -> Unit,
+    onOptionalGoogleSignIn: () -> Unit,
     ui: StudioUiState,
     vm: StudioViewModel,
     onSignOut: () -> Unit,
@@ -206,8 +221,6 @@ private fun StudioWorkspaceShell(
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    var showDashboard by remember(currentUser.uid) { mutableStateOf(true) }
-    var showIngestSheet by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showLearningDialog by remember { mutableStateOf(false) }
     var showBlueprintDialog by remember { mutableStateOf(false) }
@@ -215,7 +228,7 @@ private fun StudioWorkspaceShell(
     var overflowExpanded by remember { mutableStateOf(false) }
     var sequenceMenuExpanded by remember { mutableStateOf(false) }
 
-    if (showDashboard) {
+    if (ui.showDashboard) {
         ProjectDashboardScreen(
             currentUser = currentUser,
             projects = ui.projects,
@@ -226,7 +239,7 @@ private fun StudioWorkspaceShell(
             onSearchChange = vm::updateSearchQuery,
             onSelectProject = { proj ->
                 vm.selectProject(proj.id)
-                showDashboard = false
+                vm.setShowDashboard(false)
             },
             onCreateProjectClick = { showNewProjectDialog = true },
             onDeleteProject = vm::deleteProject,
@@ -239,7 +252,7 @@ private fun StudioWorkspaceShell(
         )
     } else {
         BackHandler {
-            showDashboard = true
+            vm.setShowDashboard(true)
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ObsidianBg)) {
@@ -253,7 +266,7 @@ private fun StudioWorkspaceShell(
                     searchQuery = ui.searchQuery,
                     onSearchChange = vm::updateSearchQuery,
                     onOpenDashboard = {
-                        showDashboard = true
+                        vm.setShowDashboard(true)
                         if (!isWideTablet) scope.launch { drawerState.close() }
                     },
                     onSelectProject = { pid ->
@@ -353,7 +366,7 @@ private fun StudioWorkspaceShell(
                         },
                         actions = {
                             IconButton(
-                                onClick = { showDashboard = true },
+                                onClick = { vm.setShowDashboard(true) },
                                 modifier = Modifier.testTag("open_dashboard_button")
                             ) {
                                 Icon(
@@ -366,7 +379,7 @@ private fun StudioWorkspaceShell(
                             val activeSeq = ui.activeSequence
                             if (activeProj != null) {
                                 IconButton(
-                                    onClick = { showIngestSheet = true },
+                                    onClick = { vm.setShowIngestSheet(true) },
                                     modifier = Modifier.testTag("open_ingest_button")
                                 ) {
                                     Icon(
@@ -438,7 +451,7 @@ private fun StudioWorkspaceShell(
                                     )
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
-                                        text = { Text(currentUser.displayName ?: "Cuenta") },
+                                        text = { Text(currentUser?.displayName ?: "Estudio Local") },
                                         onClick = {
                                             overflowExpanded = false
                                             showAccountDialog = true
@@ -546,7 +559,11 @@ private fun StudioWorkspaceShell(
                                 project = activeProject,
                                 activeSequence = activeSequence,
                                 messages = ui.agentMessages,
+                                selectedFocus = ui.activeAgentFocus,
+                                draftMessage = ui.activeAgentDraftMessage,
                                 isBusy = ui.isAgentBusy,
+                                onFocusChange = { focus -> vm.updateAgentFocus(activeProject.id, focus) },
+                                onDraftChange = { text -> vm.updateAgentDraftMessage(activeProject.id, text) },
                                 onSendMessage = { focus, text ->
                                     vm.sendAgentMessage(
                                         project = activeProject,
@@ -564,22 +581,70 @@ private fun StudioWorkspaceShell(
                                 title = stringResource(R.string.empty_sequences_title),
                                 body = stringResource(R.string.empty_sequences_body),
                                 ctaLabel = stringResource(R.string.ingest_title),
-                                onCtaClick = { showIngestSheet = true },
-                                ctaTag = "empty_open_ingest_button"
+                                onCtaClick = { vm.setShowIngestSheet(true) },
+                                ctaTag = "empty_open_ingest_button",
+                                secondaryCtaLabel = "Crear borrador manual en Guion",
+                                onSecondaryCtaClick = {
+                                    val draft = ui.activeIngestDraft
+                                    vm.createManualDraftSequence(
+                                        project = activeProject,
+                                        sequenceTitle = draft.sequenceTitle,
+                                        sourceType = draft.sourceType,
+                                        directorStyle = draft.directorStyle,
+                                        aspectRatio = draft.aspectRatio,
+                                        continuityBible = draft.continuityBible,
+                                        sourceText = draft.sourceText,
+                                        attachedFilename = draft.attachedFile?.filename,
+                                        attachedMimeType = draft.attachedFile?.mimeType,
+                                        attachedBytes = draft.attachedFile?.bytes
+                                    )
+                                },
+                                secondaryCtaTag = "empty_create_manual_draft_button"
                             )
                         } else {
                             when (ui.activeTab) {
                                 WorkspaceTab.VISION -> VisionTabView(
                                     project = activeProject,
                                     sequence = activeSequence,
+                                    directorDraft = ui.activeDirectorDraft,
+                                    selectedRating = ui.activeVisionRating,
+                                    ratingNote = ui.activeVisionRatingNote,
                                     intelligence = ui.intelligence,
+                                    onDirectorDraftChange = { transform ->
+                                        vm.updateDirectorDraft(activeProject, activeSequence, transform)
+                                    },
+                                    onSaveDirectorDraft = {
+                                        vm.saveDirectorDraftEdits(activeProject, activeSequence)
+                                    },
+                                    onRatingChange = { r -> vm.updateVisionRatingDraft(activeSequence.id, r) },
+                                    onRatingNoteChange = { n -> vm.updateVisionNoteDraft(activeSequence.id, n) },
                                     onApplyEnhancement = { snippet -> vm.applyDirectorialEnhancement(activeProject, snippet) },
                                     onRateSequence = { rating, note -> vm.rateSequence(activeProject, activeSequence, rating, note) }
                                 )
-                                WorkspaceTab.SHOTS -> ShotsAndSoundTabView(sequence = activeSequence)
+                                WorkspaceTab.SHOTS -> ShotsAndSoundTabView(
+                                    sequence = activeSequence,
+                                    selectedShotIndex = ui.activeSelectedShotIndex,
+                                    use3DStage = ui.activeStage3DMode,
+                                    onSelectShot = { idx -> vm.updateSelectedShotIndex(activeSequence.id, idx) },
+                                    onToggle3DStage = { use3d -> vm.updateStage3DMode(activeSequence.id, use3d) }
+                                )
                                 WorkspaceTab.SCREENPLAY -> ScreenplayTabView(
                                     sequence = activeSequence,
                                     isExporting = ui.isExporting,
+                                    onOpenIngest = { vm.setShowIngestSheet(true) },
+                                    onSaveSceneDraft = { sceneNum, slug, tod, action, character, dialogue, editIdx ->
+                                        vm.saveScreenplaySceneDraft(
+                                            projectId = activeProject.id,
+                                            sequence = activeSequence,
+                                            sceneNumber = sceneNum,
+                                            slugline = slug,
+                                            timeOfDay = tod,
+                                            actionText = action,
+                                            dialogueCharacter = character,
+                                            dialogueText = dialogue,
+                                            editingIndex = editIdx
+                                        )
+                                    },
                                     onExportPdf = { vm.exportSequencePdf(context, activeProject, activeSequence, onShareFile) },
                                     onExportMarkdown = {
                                         vm.exportScreenplayText(context, activeProject.title, activeSequence, fountain = false, onReadyToShare = onShareFile)
@@ -628,33 +693,51 @@ private fun StudioWorkspaceShell(
         }
     }
 
-    if (showIngestSheet && ui.activeProject != null) {
+    if (ui.showIngestSheet && ui.activeProject != null) {
         val activeProj = ui.activeProject
+        val draft = ui.activeIngestDraft
         SourceIngestModalSheet(
             project = activeProj,
+            draft = draft,
             isProducing = ui.isProducing,
             isAnalyzingAudio = ui.isAnalyzingAudio,
             latestAudioReport = ui.latestAudioReport,
-            onDismiss = { showIngestSheet = false },
+            onDraftChange = { transform -> vm.updateIngestDraft(activeProj, transform) },
+            onDismiss = { vm.setShowIngestSheet(false) },
             onSaveBible = { text -> vm.saveContinuityBible(activeProj.id, text) },
             onAnalyzeAudio = { file ->
-                vm.analyzeAudioSource(file.filename, file.mimeType, file.bytes, ui.lessons)
+                vm.analyzeAudioSource(activeProj.id, file.filename, file.mimeType, file.bytes, ui.lessons)
             },
-            onProduceSequence = { seqTitle, srcType, style, ratio, depth, bible, text, file ->
+            onProduceSequence = {
                 vm.produceSequence(
                     project = activeProj,
                     lessons = ui.lessons,
-                    sequenceTitle = seqTitle,
-                    sourceType = srcType,
-                    directorStyle = style,
-                    aspectRatio = ratio,
-                    thinkingDepth = depth,
-                    continuityBible = bible,
-                    sourceText = text,
-                    attachedFilename = file?.filename,
-                    attachedMimeType = file?.mimeType,
-                    attachedBytes = file?.bytes,
-                    onDone = { showIngestSheet = false }
+                    sequenceTitle = draft.sequenceTitle,
+                    sourceType = draft.sourceType,
+                    directorStyle = draft.directorStyle,
+                    aspectRatio = draft.aspectRatio,
+                    thinkingDepth = draft.thinkingDepth,
+                    continuityBible = draft.continuityBible,
+                    sourceText = draft.sourceText,
+                    attachedFilename = draft.attachedFile?.filename,
+                    attachedMimeType = draft.attachedFile?.mimeType,
+                    attachedBytes = draft.attachedFile?.bytes,
+                    onDone = { vm.setShowIngestSheet(false) }
+                )
+            },
+            onCreateManualDraft = {
+                vm.createManualDraftSequence(
+                    project = activeProj,
+                    sequenceTitle = draft.sequenceTitle,
+                    sourceType = draft.sourceType,
+                    directorStyle = draft.directorStyle,
+                    aspectRatio = draft.aspectRatio,
+                    continuityBible = draft.continuityBible,
+                    sourceText = draft.sourceText,
+                    attachedFilename = draft.attachedFile?.filename,
+                    attachedMimeType = draft.attachedFile?.mimeType,
+                    attachedBytes = draft.attachedFile?.bytes,
+                    onDone = { vm.setShowIngestSheet(false) }
                 )
             }
         )
@@ -665,7 +748,7 @@ private fun StudioWorkspaceShell(
             onDismiss = { showNewProjectDialog = false },
             onCreate = { title, genreStyle, sourceType, bible ->
                 vm.createProject(title, genreStyle, sourceType, bible)
-                showDashboard = false
+                vm.setShowDashboard(false)
             }
         )
     }
@@ -687,6 +770,9 @@ private fun StudioWorkspaceShell(
     if (showAccountDialog) {
         AccountDialog(
             user = currentUser,
+            authStatusMessage = authStatusMessage,
+            onClearAuthStatus = onClearAuthStatus,
+            onOptionalGoogleSignIn = onOptionalGoogleSignIn,
             onDismiss = { showAccountDialog = false },
             onSignOut = onSignOut
         )
@@ -874,7 +960,10 @@ private fun EmptyStudioState(
     body: String,
     ctaLabel: String,
     onCtaClick: () -> Unit,
-    ctaTag: String
+    ctaTag: String,
+    secondaryCtaLabel: String? = null,
+    onSecondaryCtaClick: (() -> Unit)? = null,
+    secondaryCtaTag: String? = null
 ) {
     Box(
         modifier = Modifier
@@ -908,6 +997,18 @@ private fun EmptyStudioState(
                         .testTag(ctaTag)
                 ) {
                     Text(ctaLabel, fontWeight = FontWeight.Bold)
+                }
+                if (secondaryCtaLabel != null && onSecondaryCtaClick != null) {
+                    OutlinedButton(
+                        onClick = onSecondaryCtaClick,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .let { if (secondaryCtaTag != null) it.testTag(secondaryCtaTag) else it }
+                    ) {
+                        Text(secondaryCtaLabel, color = TealAtmos, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }

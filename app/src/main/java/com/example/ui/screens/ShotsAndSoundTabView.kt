@@ -13,15 +13,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material.icons.rounded.ViewInAr
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,6 +35,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.ProductionSequence
+import com.example.ui.components.CinemaSet3DFullscreenDialog
+import com.example.ui.components.CinemaSet3DStageCard
 import com.example.ui.components.OpticalViewfinderCanvas
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
@@ -38,14 +45,19 @@ import com.example.ui.theme.MutedStone
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioDeepPanel
 import com.example.ui.theme.TealAtmos
+import com.example.ui.theme.TealContainer
 import com.example.ui.theme.WarmSilver
 
 @Composable
 fun ShotsAndSoundTabView(
     sequence: ProductionSequence,
+    selectedShotIndex: Int,
+    use3DStage: Boolean,
+    onSelectShot: (Int) -> Unit,
+    onToggle3DStage: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedShotIndex by remember(sequence.id) { mutableIntStateOf(0) }
+    var fullscreen3DOpen by remember { mutableStateOf(false) }
     val activeShot = sequence.shotList.getOrNull(selectedShotIndex)
 
     LazyColumn(
@@ -54,10 +66,65 @@ fun ShotsAndSoundTabView(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            OpticalViewfinderCanvas(
-                aspectRatioStr = sequence.aspectRatio,
-                activeShot = activeShot
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = use3DStage,
+                    onClick = { onToggle3DStage(true) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.ViewInAr,
+                            contentDescription = null
+                        )
+                    },
+                    label = { Text("Escenario 3D", style = MaterialTheme.typography.labelMedium) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AmberContainer,
+                        selectedLabelColor = AmberGold,
+                        selectedLeadingIconColor = AmberGold,
+                        containerColor = StudioDeepPanel,
+                        labelColor = WarmSilver
+                    ),
+                    modifier = Modifier.testTag("stage_mode_3d")
+                )
+                FilterChip(
+                    selected = !use3DStage,
+                    onClick = { onToggle3DStage(false) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.CropFree,
+                            contentDescription = null
+                        )
+                    },
+                    label = { Text("Visor Óptico 2D", style = MaterialTheme.typography.labelMedium) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TealContainer,
+                        selectedLabelColor = TealAtmos,
+                        selectedLeadingIconColor = TealAtmos,
+                        containerColor = StudioDeepPanel,
+                        labelColor = WarmSilver
+                    ),
+                    modifier = Modifier.testTag("stage_mode_2d")
+                )
+            }
+        }
+
+        item {
+            if (use3DStage) {
+                CinemaSet3DStageCard(
+                    sequence = sequence,
+                    activeShot = activeShot,
+                    onOpenFullscreen = { fullscreen3DOpen = true }
+                )
+            } else {
+                OpticalViewfinderCanvas(
+                    aspectRatioStr = sequence.aspectRatio,
+                    activeShot = activeShot
+                )
+            }
         }
 
         item {
@@ -87,7 +154,7 @@ fun ShotsAndSoundTabView(
                         color = if (selected) AmberGold else StudioBorder,
                         shape = RoundedCornerShape(12.dp)
                     )
-                    .clickable { selectedShotIndex = idx }
+                    .clickable { onSelectShot(idx) }
                     .testTag("shot_item_$idx")
             ) {
                 Column(
@@ -185,5 +252,13 @@ fun ShotsAndSoundTabView(
                 }
             }
         }
+    }
+
+    if (fullscreen3DOpen) {
+        CinemaSet3DFullscreenDialog(
+            sequence = sequence,
+            activeShot = activeShot,
+            onDismiss = { fullscreen3DOpen = false }
+        )
     }
 }

@@ -8,15 +8,19 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.example.R
+import com.example.data.ai.StudioAiClient
 import com.example.data.ai.StudioAiService
 import com.example.data.model.AgentMessage
 import com.example.data.model.AgentRoleFocus
 import com.example.data.model.AudioAnalysisReport
+import com.example.data.model.DirectorDraftEdits
+import com.example.data.model.IngestDraftState
 import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
+import com.example.data.model.ScreenplayBeat
+import com.example.data.model.ScreenplayScene
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
@@ -30,14 +34,12 @@ import com.example.data.util.PdfExporter
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.StudioLogic
 import com.example.data.util.friendlyFirestoreMessage
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -65,6 +67,16 @@ data class StudioUiState(
     val intelligence: StudioIntelligenceReport? = null,
     val activeTab: WorkspaceTab = WorkspaceTab.AGENT,
     val searchQuery: String = "",
+    val showDashboard: Boolean = true,
+    val showIngestSheet: Boolean = false,
+    val activeIngestDraft: IngestDraftState = IngestDraftState(),
+    val activeDirectorDraft: DirectorDraftEdits = DirectorDraftEdits(),
+    val activeVisionRating: Int = 5,
+    val activeVisionRatingNote: String = "",
+    val activeSelectedShotIndex: Int = 0,
+    val activeStage3DMode: Boolean = true,
+    val activeAgentFocus: AgentRoleFocus = AgentRoleFocus.COUNCIL,
+    val activeAgentDraftMessage: String = "",
     val isProducing: Boolean = false,
     val isAnalyzingAudio: Boolean = false,
     val latestAudioReport: AudioAnalysisReport? = null,
@@ -79,7 +91,7 @@ data class StudioUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class StudioViewModel(
     private val repository: StudioRepository,
-    private val aiService: StudioAiService,
+    private val aiService: StudioAiClient,
     private val currentUserId: String
 ) : ViewModel() {
 
@@ -87,8 +99,20 @@ class StudioViewModel(
     private val _selectedSequenceId = MutableStateFlow("")
     private val _activeTab = MutableStateFlow(WorkspaceTab.AGENT)
     private val _searchQuery = MutableStateFlow("")
+    private val _showDashboard = MutableStateFlow(true)
+    private val _showIngestSheet = MutableStateFlow(false)
+
     private val _sequencesByProject = MutableStateFlow<Map<String, List<ProductionSequence>>>(emptyMap())
     private val _localFramePaths = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    private val _ingestDrafts = MutableStateFlow<Map<String, IngestDraftState>>(emptyMap())
+    private val _directorDraftsBySeq = MutableStateFlow<Map<String, DirectorDraftEdits>>(emptyMap())
+    private val _visionRatingsBySeq = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val _visionNotesBySeq = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val _selectedShotIndexBySeq = MutableStateFlow<Map<String, Int>>(emptyMap())
+    private val _stage3DModeBySeq = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    private val _agentFocusByProject = MutableStateFlow<Map<String, AgentRoleFocus>>(emptyMap())
+    private val _agentDraftByProject = MutableStateFlow<Map<String, String>>(emptyMap())
 
     private val _isProducing = MutableStateFlow(false)
     private val _isAnalyzingAudio = MutableStateFlow(false)
@@ -119,11 +143,7 @@ class StudioViewModel(
                 Log.w(TAG, "Error observing projects", root)
                 emit(UiState.Error(friendlyFirestoreMessage(root)))
             }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000L),
-                initialValue = UiState.Loading
-            )
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
 
     private val activeSequencesStream: StateFlow<List<ProductionSequence>> =
         _selectedProjectId.flatMapLatest { pid ->
@@ -185,6 +205,18 @@ class StudioViewModel(
         BusyState(producing, audio, agent, finalizing, exporting)
     }
 
+    private val navState = combine(
+        _selectedProjectId,
+        _selectedSequenceId,
+        _activeTab,
+        _searchQuery,
+        combine(_showDashboard, _showIngestSheet, busyFlags) { dash, ingest, busy ->
+            Triple(dash, ingest, busy)
+        }
+    ) { pId, sId, tab, query, shell ->
+        SelectionState(pId, sId, tab, query, shell.first, shell.second, shell.third)
+    }
+
     private val bannersState = combine(
         _generatingFrameId,
         _statusBanner,
@@ -195,34 +227,46 @@ class StudioViewModel(
         BannerState(genFrame, status, err, audioReport, framePaths)
     }
 
-    val projectsUiState: StateFlow<UiState<StudioUiState>> = combine(
+    private val tabDraftsState = combine(
+        combine(_ingestDrafts, _directorDraftsBySeq) { ingest, dir -> ingest to dir },
+        combine(_visionRatingsBySeq, _visionNotesBySeq) { ratings, notes -> ratings to notes },
+        combine(_selectedShotIndexBySeq, _stage3DModeBySeq) { shotIdx, stage3d -> shotIdx to stage3d },
+        combine(_agentFocusByProject, _agentDraftByProject) { focus, msg -> focus to msg }
+    ) { ingestDir, vision, shots, agent ->
+        TabDraftsSnapshot(
+            ingestDrafts = ingestDir.first,
+            directorDraftsBySeq = ingestDir.second,
+            visionRatingsBySeq = vision.first,
+            visionNotesBySeq = vision.second,
+            selectedShotIndexBySeq = shots.first,
+            stage3DModeBySeq = shots.second,
+            agentFocusByProject = agent.first,
+            agentDraftByProject = agent.second
+        )
+    }
+
+    private val repoDataStream = combine(
         projectsStream,
         activeSequencesStream,
         activeMessagesStream,
-        lessonsStream,
-        combine(_selectedProjectId, _selectedSequenceId, _activeTab, _searchQuery, busyFlags) { pId, sId, tab, query, busy ->
-            SelectionState(pId, sId, tab, query, busy)
-        },
-        bannersState
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val projResult = values[0] as UiState<List<ProductionProject>>
-        @Suppress("UNCHECKED_CAST")
-        val activeSeqs = values[1] as List<ProductionSequence>
-        @Suppress("UNCHECKED_CAST")
-        val messages = values[2] as List<AgentMessage>
-        @Suppress("UNCHECKED_CAST")
-        val lessons = values[3] as List<LearningLesson>
-        val sel = values[4] as SelectionState
-        val banners = values[5] as BannerState
+        lessonsStream
+    ) { projResult, activeSeqs, messages, lessons ->
+        RepoSnapshot(projResult, activeSeqs, messages, lessons)
+    }
 
-        when (projResult) {
+    val projectsUiState: StateFlow<UiState<StudioUiState>> = combine(
+        repoDataStream,
+        navState,
+        bannersState,
+        tabDraftsState
+    ) { repoData, sel, banners, drafts ->
+        when (val projResult = repoData.projectsResult) {
             is UiState.Loading -> UiState.Loading
             is UiState.Error -> UiState.Error(projResult.message)
             is UiState.Success -> {
                 val cachedMap = _sequencesByProject.value
                 val enrichedProjects = projResult.data.map { proj ->
-                    val rawSeqs = if (proj.id == sel.selectedProjectId) activeSeqs else (cachedMap[proj.id] ?: emptyList())
+                    val rawSeqs = if (proj.id == sel.selectedProjectId) repoData.activeSeqs else (cachedMap[proj.id] ?: emptyList())
                     val mergedSeqs = rawSeqs.map { seq ->
                         seq.copy(
                             storyboardFrames = seq.storyboardFrames.map { frame ->
@@ -231,7 +275,10 @@ class StudioViewModel(
                             }
                         )
                     }
-                    proj.copy(sequences = mergedSeqs, agentMessages = if (proj.id == sel.selectedProjectId) messages else emptyList())
+                    proj.copy(
+                        sequences = mergedSeqs,
+                        agentMessages = if (proj.id == sel.selectedProjectId) repoData.messages else emptyList()
+                    )
                 }
                 val activeProject = enrichedProjects.firstOrNull { it.id == sel.selectedProjectId }
                     ?: enrichedProjects.firstOrNull()
@@ -241,22 +288,68 @@ class StudioViewModel(
                 val intelligence = activeSequence?.let { seq ->
                     StudioIntelligence.buildStudioIntelligence(
                         projects = enrichedProjects,
-                        lessons = lessons,
+                        lessons = repoData.lessons,
                         activeProject = activeProject,
                         activeSequence = seq
                     )
                 }
+
+                val ingestDraft = activeProject?.let { proj ->
+                    drafts.ingestDrafts[proj.id] ?: defaultIngestDraft(proj)
+                } ?: IngestDraftState()
+
+                val directorDraft = if (activeSequence != null) {
+                    drafts.directorDraftsBySeq[activeSequence.id]
+                        ?: defaultDirectorDraft(activeProject, activeSequence)
+                } else {
+                    DirectorDraftEdits()
+                }
+
+                val visionRating = activeSequence?.let { seq ->
+                    drafts.visionRatingsBySeq[seq.id] ?: seq.sequenceRating ?: 5
+                } ?: 5
+
+                val visionNote = activeSequence?.let { seq ->
+                    drafts.visionNotesBySeq[seq.id].orEmpty()
+                }.orEmpty()
+
+                val shotIdx = activeSequence?.let { seq ->
+                    val raw = drafts.selectedShotIndexBySeq[seq.id] ?: 0
+                    if (seq.shotList.isEmpty()) 0 else raw.coerceIn(0, seq.shotList.lastIndex)
+                } ?: 0
+
+                val stage3D = activeSequence?.let { seq ->
+                    drafts.stage3DModeBySeq[seq.id] ?: true
+                } ?: true
+
+                val agentFocus = activeProject?.let { proj ->
+                    drafts.agentFocusByProject[proj.id] ?: AgentRoleFocus.COUNCIL
+                } ?: AgentRoleFocus.COUNCIL
+
+                val agentDraftMsg = activeProject?.let { proj ->
+                    drafts.agentDraftByProject[proj.id].orEmpty()
+                }.orEmpty()
 
                 UiState.Success(
                     StudioUiState(
                         projects = enrichedProjects,
                         activeProject = activeProject,
                         activeSequence = activeSequence,
-                        agentMessages = messages,
-                        lessons = lessons,
+                        agentMessages = repoData.messages,
+                        lessons = repoData.lessons,
                         intelligence = intelligence,
                         activeTab = sel.activeTab,
                         searchQuery = sel.searchQuery,
+                        showDashboard = sel.showDashboard,
+                        showIngestSheet = sel.showIngestSheet,
+                        activeIngestDraft = ingestDraft,
+                        activeDirectorDraft = directorDraft,
+                        activeVisionRating = visionRating,
+                        activeVisionRatingNote = visionNote,
+                        activeSelectedShotIndex = shotIdx,
+                        activeStage3DMode = stage3D,
+                        activeAgentFocus = agentFocus,
+                        activeAgentDraftMessage = agentDraftMsg,
                         isProducing = sel.busy.producing,
                         isAnalyzingAudio = sel.busy.audio,
                         latestAudioReport = banners.audioReport,
@@ -271,6 +364,42 @@ class StudioViewModel(
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
+
+    private fun defaultIngestDraft(project: ProductionProject): IngestDraftState {
+        val preset = StudioLogic.DIRECTOR_STYLES.firstOrNull {
+            project.genreStyle.contains(it.label, ignoreCase = true)
+        } ?: StudioLogic.DIRECTOR_STYLES.first()
+        return IngestDraftState(
+            sourceType = project.defaultSourceType,
+            directorStyle = preset.label,
+            aspectRatio = preset.defaultRatio,
+            continuityBible = project.continuityBible,
+            bibleInitialized = true
+        )
+    }
+
+    private fun defaultDirectorDraft(
+        project: ProductionProject?,
+        seq: ProductionSequence
+    ): DirectorDraftEdits = DirectorDraftEdits(
+        directorStyle = seq.directorStyle,
+        aspectRatio = seq.aspectRatio,
+        cameraSystem = seq.cameraSystem,
+        lensPackage = seq.lensPackage,
+        filmStockOrLut = seq.filmStockOrLut,
+        colorTempKelvin = seq.lighting.colorTemperatureKelvin,
+        directorVision = seq.directorVision,
+        continuityBible = project?.continuityBible.orEmpty(),
+        isDirty = false
+    )
+
+    fun setShowDashboard(show: Boolean) {
+        _showDashboard.value = show
+    }
+
+    fun setShowIngestSheet(show: Boolean) {
+        _showIngestSheet.value = show
+    }
 
     fun selectProject(projectId: String) {
         _selectedProjectId.value = projectId
@@ -295,6 +424,92 @@ class StudioViewModel(
         _errorBanner.value = null
     }
 
+    fun updateIngestDraft(
+        project: ProductionProject,
+        transform: (IngestDraftState) -> IngestDraftState
+    ) {
+        _ingestDrafts.update { map ->
+            val current = map[project.id] ?: defaultIngestDraft(project)
+            map + (project.id to transform(current))
+        }
+    }
+
+    fun updateDirectorDraft(
+        project: ProductionProject,
+        sequence: ProductionSequence,
+        transform: (DirectorDraftEdits) -> DirectorDraftEdits
+    ) {
+        _directorDraftsBySeq.update { map ->
+            val current = map[sequence.id] ?: defaultDirectorDraft(project, sequence)
+            map + (sequence.id to transform(current).copy(isDirty = true))
+        }
+    }
+
+    fun saveDirectorDraftEdits(
+        project: ProductionProject,
+        sequence: ProductionSequence
+    ) {
+        val draft = _directorDraftsBySeq.value[sequence.id] ?: defaultDirectorDraft(project, sequence)
+        viewModelScope.launch {
+            _errorBanner.value = null
+            if (draft.continuityBible != project.continuityBible) {
+                repository.updateProjectContinuity(currentUserId, project.id, draft.continuityBible)
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        return@launch
+                    }
+            }
+            if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
+                val updatedSeq = sequence.copy(
+                    directorStyle = draft.directorStyle.trim().ifBlank { sequence.directorStyle },
+                    aspectRatio = draft.aspectRatio.trim().ifBlank { sequence.aspectRatio },
+                    cameraSystem = draft.cameraSystem.trim().ifBlank { sequence.cameraSystem },
+                    lensPackage = draft.lensPackage.trim().ifBlank { sequence.lensPackage },
+                    filmStockOrLut = draft.filmStockOrLut.trim().ifBlank { sequence.filmStockOrLut },
+                    lighting = sequence.lighting.copy(
+                        colorTemperatureKelvin = draft.colorTempKelvin.trim()
+                    ),
+                    directorVision = draft.directorVision.trim()
+                )
+                repository.updateDraftSequence(currentUserId, project.id, updatedSeq)
+                    .onSuccess {
+                        _directorDraftsBySeq.update { it - sequence.id }
+                        _statusBanner.value = "Ajustes de dirección guardados en «${sequence.title}»."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } else {
+                _directorDraftsBySeq.update { it - sequence.id }
+                _statusBanner.value = "Biblia de continuidad actualizada (la secuencia Final es inmutable)."
+            }
+        }
+    }
+
+    fun updateVisionRatingDraft(sequenceId: String, rating: Int) {
+        _visionRatingsBySeq.update { it + (sequenceId to rating.coerceIn(1, 5)) }
+    }
+
+    fun updateVisionNoteDraft(sequenceId: String, note: String) {
+        _visionNotesBySeq.update { it + (sequenceId to note) }
+    }
+
+    fun updateSelectedShotIndex(sequenceId: String, index: Int) {
+        _selectedShotIndexBySeq.update { it + (sequenceId to index.coerceAtLeast(0)) }
+    }
+
+    fun updateStage3DMode(sequenceId: String, use3D: Boolean) {
+        _stage3DModeBySeq.update { it + (sequenceId to use3D) }
+    }
+
+    fun updateAgentFocus(projectId: String, focus: AgentRoleFocus) {
+        _agentFocusByProject.update { it + (projectId to focus) }
+    }
+
+    fun updateAgentDraftMessage(projectId: String, text: String) {
+        _agentDraftByProject.update { it + (projectId to text) }
+    }
+
     fun createProject(
         title: String,
         genreStyle: String,
@@ -308,6 +523,7 @@ class StudioViewModel(
                     _selectedProjectId.value = newId
                     _selectedSequenceId.value = ""
                     _activeTab.value = WorkspaceTab.AGENT
+                    _showDashboard.value = false
                     _statusBanner.value = "Producción \"$title\" creada en el estudio."
                 }
                 .onFailure { err ->
@@ -321,6 +537,9 @@ class StudioViewModel(
             _errorBanner.value = null
             repository.deleteProject(currentUserId, projectId)
                 .onSuccess {
+                    _ingestDrafts.update { it - projectId }
+                    _agentFocusByProject.update { it - projectId }
+                    _agentDraftByProject.update { it - projectId }
                     _statusBanner.value = "Producción eliminada."
                 }
                 .onFailure { err ->
@@ -334,6 +553,10 @@ class StudioViewModel(
             _errorBanner.value = null
             repository.updateProjectContinuity(currentUserId, projectId, bibleText)
                 .onSuccess {
+                    _ingestDrafts.update { map ->
+                        val existing = map[projectId]
+                        if (existing != null) map + (projectId to existing.copy(continuityBible = bibleText)) else map
+                    }
                     _statusBanner.value = "Biblia de continuidad actualizada."
                 }
                 .onFailure { err ->
@@ -343,6 +566,7 @@ class StudioViewModel(
     }
 
     fun analyzeAudioSource(
+        projectId: String,
         filename: String,
         mimeType: String,
         audioBytes: ByteArray,
@@ -352,6 +576,10 @@ class StudioViewModel(
             _isAnalyzingAudio.value = true
             _errorBanner.value = null
             _statusBanner.value = null
+            _ingestDrafts.update { map ->
+                val cur = map[projectId]
+                if (cur != null) map + (projectId to cur.copy(ingestError = null)) else map
+            }
             try {
                 val learningContext = LearningEngine.buildLearningPromptContext(lessons, 6)
                 val report = aiService.analyzeAudio(filename, mimeType, audioBytes, learningContext)
@@ -361,7 +589,12 @@ class StudioViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Audio analysis failed", e)
-                _errorBanner.value = AgentLogic.formatAiError(e)
+                val msg = AgentLogic.formatAiError(e)
+                _errorBanner.value = msg
+                _ingestDrafts.update { map ->
+                    val cur = map[projectId]
+                    if (cur != null) map + (projectId to cur.copy(ingestError = msg)) else map
+                }
             } finally {
                 _isAnalyzingAudio.value = false
             }
@@ -381,7 +614,7 @@ class StudioViewModel(
         attachedFilename: String?,
         attachedMimeType: String?,
         attachedBytes: ByteArray?,
-        onDone: () -> Unit
+        onDone: () -> Unit = {}
     ) {
         val validationErrors = StudioLogic.validateSequenceInput(
             sequenceTitle = sequenceTitle,
@@ -389,7 +622,9 @@ class StudioViewModel(
             hasFile = attachedBytes != null
         )
         if (validationErrors.isNotEmpty()) {
-            _errorBanner.value = validationErrors.first()
+            val msg = validationErrors.first()
+            _errorBanner.value = msg
+            updateIngestDraft(project) { it.copy(ingestError = msg) }
             return
         }
 
@@ -397,6 +632,7 @@ class StudioViewModel(
             _isProducing.value = true
             _errorBanner.value = null
             _statusBanner.value = null
+            updateIngestDraft(project) { it.copy(ingestError = null) }
             try {
                 val learningContext = LearningEngine.buildLearningPromptContext(lessons, 8)
                 val produced = aiService.produceSequence(
@@ -429,20 +665,154 @@ class StudioViewModel(
                     nextSequencesCount = project.sequences.size + 1
                 ).onSuccess { saved ->
                     _selectedSequenceId.value = saved.id
-                    _activeTab.value = WorkspaceTab.VISION
-                    _statusBanner.value = "Secuencia \"${saved.title}\" producida en borrador."
+                    _activeTab.value = WorkspaceTab.SCREENPLAY
+                    _showIngestSheet.value = false
+                    _ingestDrafts.update { it - project.id }
+                    _statusBanner.value = "Secuencia \"${saved.title}\" producida (${saved.screenplay.size} escenas, ${saved.shotList.size} planos)."
                     onDone()
                 }.onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    updateIngestDraft(project) { it.copy(ingestError = msg) }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Sequence production failed", e)
-                _errorBanner.value = AgentLogic.formatAiError(e)
+                val msg = AgentLogic.formatAiError(e)
+                _errorBanner.value = msg
+                updateIngestDraft(project) { it.copy(ingestError = msg) }
             } finally {
                 _isProducing.value = false
             }
+        }
+    }
+
+    fun createManualDraftSequence(
+        project: ProductionProject,
+        sequenceTitle: String,
+        sourceType: SourceMaterialType,
+        directorStyle: String,
+        aspectRatio: String,
+        continuityBible: String,
+        sourceText: String,
+        attachedFilename: String? = null,
+        attachedMimeType: String? = null,
+        attachedBytes: ByteArray? = null,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isProducing.value = true
+            _errorBanner.value = null
+            updateIngestDraft(project) { it.copy(ingestError = null) }
+            try {
+                val textPreview = if (
+                    attachedBytes != null &&
+                    StudioLogic.isSupportedSourceFile(attachedFilename, attachedMimeType) &&
+                    !attachedMimeType.orEmpty().startsWith("audio/") &&
+                    attachedFilename?.lowercase()?.endsWith(".pdf") != true
+                ) {
+                    attachedBytes.toString(Charsets.UTF_8).take(12_000)
+                } else null
+
+                val manualSeq = StudioLogic.buildManualDraftSequence(
+                    userId = currentUserId,
+                    project = project,
+                    sequenceTitle = sequenceTitle,
+                    sourceType = sourceType,
+                    directorStyle = directorStyle,
+                    aspectRatio = aspectRatio,
+                    sourceText = sourceText,
+                    attachedFilename = attachedFilename,
+                    attachedTextPreview = textPreview
+                )
+                val nextBible = continuityBible.trim().ifBlank { project.continuityBible }
+                repository.saveProducedSequence(
+                    userId = currentUserId,
+                    projectId = project.id,
+                    sequence = manualSeq,
+                    nextContinuityBible = nextBible,
+                    nextSequencesCount = project.sequences.size + 1
+                ).onSuccess { saved ->
+                    _selectedSequenceId.value = saved.id
+                    _activeTab.value = WorkspaceTab.SCREENPLAY
+                    _showIngestSheet.value = false
+                    _ingestDrafts.update { it - project.id }
+                    _statusBanner.value = "Borrador manual \"${saved.title}\" guardado en Guion."
+                    onDone()
+                }.onFailure { err ->
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    updateIngestDraft(project) { it.copy(ingestError = msg) }
+                }
+            } finally {
+                _isProducing.value = false
+            }
+        }
+    }
+
+    fun saveScreenplaySceneDraft(
+        projectId: String,
+        sequence: ProductionSequence,
+        sceneNumber: String,
+        slugline: String,
+        timeOfDay: String,
+        actionText: String,
+        dialogueCharacter: String,
+        dialogueText: String,
+        editingIndex: Int?
+    ) {
+        if (sequence.versionStatus != SequenceVersionStatus.DRAFT) {
+            _errorBanner.value = "La secuencia está aprobada como Versión Final y es de solo lectura."
+            return
+        }
+        val cleanSlug = slugline.trim().ifBlank { "INT. ESCENA - NOCHE" }.uppercase()
+        val beats = mutableListOf<ScreenplayBeat>()
+        if (actionText.isNotBlank()) {
+            beats.add(ScreenplayBeat(type = "action", text = actionText.trim()))
+        }
+        if (dialogueText.isNotBlank()) {
+            beats.add(
+                ScreenplayBeat(
+                    type = "dialogue",
+                    character = dialogueCharacter.trim().ifBlank { "PERSONAJE" }.uppercase(),
+                    text = dialogueText.trim()
+                )
+            )
+        }
+        if (beats.isEmpty()) {
+            _errorBanner.value = "Escribe al menos una acción o diálogo para la escena."
+            return
+        }
+        val targetNumber = sceneNumber.trim().ifBlank {
+            if (editingIndex != null && editingIndex in sequence.screenplay.indices) {
+                sequence.screenplay[editingIndex].sceneNumber
+            } else {
+                (sequence.screenplay.size + 1).toString()
+            }
+        }
+        val nextScene = ScreenplayScene(
+            sceneNumber = targetNumber,
+            slugline = cleanSlug,
+            timeOfDay = timeOfDay.trim().ifBlank { "NOCHE" }.uppercase(),
+            beats = beats
+        )
+        val updatedList = sequence.screenplay.toMutableList()
+        if (editingIndex != null && editingIndex in updatedList.indices) {
+            updatedList[editingIndex] = nextScene
+        } else {
+            updatedList.add(nextScene)
+        }
+        val updatedSequence = sequence.copy(screenplay = updatedList)
+        viewModelScope.launch {
+            _errorBanner.value = null
+            repository.updateDraftSequence(currentUserId, projectId, updatedSequence)
+                .onSuccess {
+                    _statusBanner.value = "Escena $targetNumber guardada en «${sequence.title}»."
+                }
+                .onFailure { err ->
+                    _errorBanner.value = friendlyFirestoreMessage(err)
+                }
         }
     }
 
@@ -543,6 +913,7 @@ class StudioViewModel(
             _errorBanner.value = null
             repository.rateSequence(currentUserId, project.id, project.title, sequence, rating, note)
                 .onSuccess {
+                    _visionNotesBySeq.update { it + (sequence.id to "") }
                     _statusBanner.value = if (rating >= 4) {
                         "Valoración registrada en Studio Intelligence ($rating/5 ★)."
                     } else {
@@ -578,16 +949,13 @@ class StudioViewModel(
             try {
                 val imagePath = aiService.generateStoryboardImage(context, frame, sequence.aspectRatio)
                 _localFramePaths.update { it + (frame.id to imagePath) }
-                if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
-                    val updatedFrames = sequence.storyboardFrames.map {
-                        if (it.id == frame.id) it.copy(localImagePath = imagePath) else it
-                    }
-                    repository.updateDraftSequence(
-                        userId = currentUserId,
-                        projectId = projectId,
-                        sequence = sequence.copy(storyboardFrames = updatedFrames)
-                    )
-                }
+                repository.saveStoryboardFrameImagePath(
+                    userId = currentUserId,
+                    projectId = projectId,
+                    sequence = sequence,
+                    frameId = frame.id,
+                    localImagePath = imagePath
+                )
                 _statusBanner.value = "Fotograma generado con Nano para \"${frame.title}\"."
             } catch (e: CancellationException) {
                 throw e
@@ -728,6 +1096,8 @@ class StudioViewModel(
         val selectedSequenceId: String,
         val activeTab: WorkspaceTab,
         val searchQuery: String,
+        val showDashboard: Boolean,
+        val showIngestSheet: Boolean,
         val busy: BusyState
     )
 
@@ -739,15 +1109,32 @@ class StudioViewModel(
         val localFramePaths: Map<String, String>
     )
 
+    private data class RepoSnapshot(
+        val projectsResult: UiState<List<ProductionProject>>,
+        val activeSeqs: List<ProductionSequence>,
+        val messages: List<AgentMessage>,
+        val lessons: List<LearningLesson>
+    )
+
+    private data class TabDraftsSnapshot(
+        val ingestDrafts: Map<String, IngestDraftState>,
+        val directorDraftsBySeq: Map<String, DirectorDraftEdits>,
+        val visionRatingsBySeq: Map<String, Int>,
+        val visionNotesBySeq: Map<String, String>,
+        val selectedShotIndexBySeq: Map<String, Int>,
+        val stage3DModeBySeq: Map<String, Boolean>,
+        val agentFocusByProject: Map<String, AgentRoleFocus>,
+        val agentDraftByProject: Map<String, String>
+    )
+
     companion object {
         fun provideFactory(currentUserId: String): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val databaseId = app.getString(R.string.firestore_database_id)
                 StudioViewModel(
-                    repository = StudioRepository(databaseId),
+                    repository = StudioRepository(app),
                     aiService = StudioAiService(),
                     currentUserId = currentUserId
                 )
