@@ -188,6 +188,7 @@ class AuthRepository(private val studioRepository: StudioRepository) {
         withContext(NonCancellable) {
             val requestContext = context.findActivity() ?: context
             try {
+                studioRepository.clearSessionCache()
                 Firebase.auth.signOut()
                 CredentialManager.create(requestContext)
                     .clearCredentialState(ClearCredentialStateRequest())

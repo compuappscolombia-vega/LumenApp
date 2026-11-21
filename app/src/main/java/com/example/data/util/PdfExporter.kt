@@ -11,8 +11,11 @@ import android.graphics.pdf.PdfDocument
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.net.Uri
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
+import com.example.data.model.SequenceVersionStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -334,6 +337,140 @@ object PdfExporter {
 
         val outFile = File(exportsDir(context), "${safeSlug(project.title)}_${safeSlug(sequence.title)}_Final.pdf")
         writer.writeToFile(outFile)
+    }
+
+    suspend fun exportScriptAndSchedulePdf(
+        context: Context,
+        project: ProductionProject,
+        sequence: ProductionSequence
+    ): File = withContext(Dispatchers.IO) {
+        val statusLabel = if (sequence.versionStatus == SequenceVersionStatus.FINAL) {
+            "VERSIÓN FINAL"
+        } else {
+            "BORRADOR EN PRODUCCIÓN"
+        }
+        val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.forLanguageTag("es-ES")).format(Date())
+        val scheduleRows = StudioLogic.buildProductionSchedule(sequence)
+        val totalMinutes = scheduleRows.sumOf { it.estimatedMinutes }
+
+        val writer = PdfWriter()
+        writer.startNewPage()
+        writer.drawBanner(
+            title = project.title.uppercase(),
+            subtitle = "GUION Y PLAN DE RODAJE · ${sequence.title}",
+            meta = "$statusLabel · ${sequence.aspectRatio} · ${sequence.cameraSystem} · $dateStr"
+        )
+
+        writer.drawCalloutBox(
+            "RESUMEN DE RODAJE Y PRODUCCIÓN",
+            listOf(
+                "Secuencia: ${sequence.title} | Firma: ${sequence.directorStyle}",
+                "Escenas en guion: ${sequence.screenplay.size} | Bloques/Planos: ${scheduleRows.size}",
+                "Tiempo estimado de rodaje en set: ${totalMinutes / 60}h ${totalMinutes % 60}m ($totalMinutes min)",
+                "Óptica y LUT: ${sequence.lensPackage} · ${sequence.filmStockOrLut}",
+                "Locaciones / Set: ${sequence.vfx.locationsAndSets.ifBlank { "Definidas en Biblia de Continuidad" }.take(82)}"
+            )
+        )
+
+        writer.drawSectionHeading("1. Plan de Rodaje (Cronograma de Producción)")
+        if (scheduleRows.isEmpty()) {
+            writer.drawParagraph("Sin bloques de rodaje registrados aún en esta secuencia.")
+        } else {
+            for (row in scheduleRows) {
+                writer.drawParagraph(
+                    "Bloque #${row.blockNumber} · ${row.shotRef} · ${row.sceneRef} [${row.timeOfDay}] (~${row.estimatedMinutes} min)",
+                    bold = true,
+                    textSizeSp = 9.3f,
+                    spacingAfter = 2f
+                )
+                writer.drawParagraph(
+                    "Cámara/Lente: ${row.cameraAndLens} | Mov.: ${row.movement}",
+                    mono = true,
+                    textSizeSp = 8.4f,
+                    indent = 10f,
+                    spacingAfter = 2f
+                )
+                writer.drawParagraph(
+                    "Notas técnicas: ${row.technicalNotes}",
+                    textSizeSp = 8.6f,
+                    color = Color.rgb(80, 82, 92),
+                    indent = 10f,
+                    spacingAfter = 6f
+                )
+            }
+        }
+
+        if (sequence.soundDesign.atmosLayers.isNotEmpty() || sequence.vfx.practicalSfx.isNotEmpty()) {
+            writer.drawSectionHeading("2. Requerimientos de Arte, SFX/VFX y Sonido en Set")
+            if (sequence.vfx.locationsAndSets.isNotBlank()) {
+                writer.drawParagraph("• Locaciones/Sets: ${sequence.vfx.locationsAndSets}")
+            }
+            if (sequence.vfx.wardrobeAndMakeup.isNotBlank()) {
+                writer.drawParagraph("• Vestuario/Maquillaje: ${sequence.vfx.wardrobeAndMakeup}")
+            }
+            if (sequence.vfx.practicalSfx.isNotEmpty()) {
+                writer.drawParagraph("• Efectos Prácticos (SFX): ${sequence.vfx.practicalSfx.joinToString(" | ")}")
+            }
+            if (sequence.vfx.cgiElements.isNotEmpty()) {
+                writer.drawParagraph("• Elementos VFX/CGI: ${sequence.vfx.cgiElements.joinToString(" | ")}")
+            }
+            if (sequence.soundDesign.atmosLayers.isNotEmpty()) {
+                writer.drawParagraph("• Capas Atmos (${sequence.soundDesign.tempoBpm} BPM): ${sequence.soundDesign.atmosLayers.joinToString(" | ")}")
+            }
+        }
+
+        writer.drawSectionHeading("3. Guion Técnico-Literario (${sequence.screenplay.size} escenas)")
+        if (sequence.screenplay.isEmpty()) {
+            writer.drawParagraph("Esta secuencia aún no tiene escenas escritas en el editor de guion.")
+        } else {
+            for (scene in sequence.screenplay) {
+                writer.drawParagraph(
+                    "ESCENA ${scene.sceneNumber} · ${scene.slugline.uppercase()} [${scene.timeOfDay}]",
+                    bold = true,
+                    mono = true,
+                    textSizeSp = 9.5f
+                )
+                for (beat in scene.beats) {
+                    when (beat.type.lowercase()) {
+                        "dialogue" -> {
+                            writer.drawParagraph((beat.character ?: "PERSONAJE").uppercase(), bold = true, indent = 40f, mono = true, spacingAfter = 1f)
+                            if (!beat.parenthetical.isNullOrBlank()) {
+                                writer.drawParagraph("(${beat.parenthetical})", indent = 48f, mono = true, textSizeSp = 8.5f, spacingAfter = 1f)
+                            }
+                            writer.drawParagraph(beat.text, indent = 28f, mono = true, textSizeSp = 9f)
+                        }
+                        "camera" -> writer.drawParagraph("[CÁMARA] ${beat.text}", color = Color.rgb(168, 114, 24), mono = true, textSizeSp = 8.8f)
+                        "sound" -> writer.drawParagraph("[SONIDO] ${beat.text}", color = Color.rgb(55, 115, 130), mono = true, textSizeSp = 8.8f)
+                        else -> writer.drawParagraph(beat.text, mono = true, textSizeSp = 9f)
+                    }
+                }
+            }
+        }
+
+        val outFile = File(exportsDir(context), "${safeSlug(project.title)}_${safeSlug(sequence.title)}_Guion_y_Plan.pdf")
+        writer.writeToFile(outFile)
+    }
+
+    suspend fun copyFileToUri(
+        context: Context,
+        sourceFile: File,
+        destinationUri: Uri
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val outStream = context.contentResolver.openOutputStream(destinationUri)
+                ?: return@withContext Result.failure(IllegalStateException("No se pudo abrir la ubicación de destino en el dispositivo."))
+            outStream.use { dest ->
+                sourceFile.inputStream().use { src ->
+                    src.copyTo(dest)
+                }
+                dest.flush()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun exportLibraryPdf(

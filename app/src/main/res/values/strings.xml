@@ -76,4 +76,6 @@
     <string name="cd_account_menu">Cuenta y cierre de sesión</string>
     <string name="cd_auth_hero">Estudio de cine independiente LumenReel con cámara de 65mm</string>
     <string name="cd_storyboard_image">Fotograma cinematográfico generado por Nano</string>
+    <string name="cd_voice_dictate_scene">Dictar descripción de escena por micrófono</string>
+    <string name="action_save_script_schedule_pdf">Guardar Guion y Plan (PDF)</string>
 </resources>

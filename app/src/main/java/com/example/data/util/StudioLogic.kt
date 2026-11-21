@@ -432,4 +432,80 @@ object StudioLogic {
             continuitySummary = "Borrador manual creado para «$cleanTitle»."
         )
     }
+
+    data class ProductionScheduleRow(
+        val blockNumber: Int,
+        val shotRef: String,
+        val sceneRef: String,
+        val timeOfDay: String,
+        val cameraAndLens: String,
+        val movement: String,
+        val estimatedMinutes: Int,
+        val technicalNotes: String
+    )
+
+    fun buildProductionSchedule(sequence: ProductionSequence): List<ProductionScheduleRow> {
+        val shots = sequence.shotList
+        val scenes = sequence.screenplay
+        if (shots.isEmpty() && scenes.isEmpty()) return emptyList()
+
+        val rows = mutableListOf<ProductionScheduleRow>()
+        val count = maxOf(shots.size, scenes.size)
+        for (idx in 0 until count) {
+            val shot = shots.getOrNull(idx)
+            val scene = scenes.getOrNull(idx) ?: scenes.lastOrNull()
+            val sceneLabel = if (scene != null) {
+                "Esc. ${scene.sceneNumber} (${scene.slugline.take(36)})"
+            } else {
+                "Secuencia general"
+            }
+            val estMinutes = if (shot != null) {
+                ((shot.durationSec * 3.0).toInt() + 20).coerceIn(15, 180)
+            } else {
+                35
+            }
+            val notes = buildList {
+                if (shot != null && shot.framingNote.isNotBlank()) add(shot.framingNote)
+                if (sequence.lighting.colorTemperatureKelvin.isNotBlank()) {
+                    add("Luz ${sequence.lighting.colorTemperatureKelvin}")
+                }
+                if (sequence.vfx.practicalSfx.isNotEmpty() && idx == 0) {
+                    add("SFX: ${sequence.vfx.practicalSfx.joinToString(", ")}")
+                }
+            }.joinToString(" · ").ifBlank { "Set estándar" }
+
+            rows.add(
+                ProductionScheduleRow(
+                    blockNumber = idx + 1,
+                    shotRef = if (shot != null) "Plano ${shot.shotNumber} [${shot.shotType}]" else "Bloque ${idx + 1}",
+                    sceneRef = sceneLabel,
+                    timeOfDay = scene?.timeOfDay?.ifBlank { "DÍA" } ?: "DÍA",
+                    cameraAndLens = if (shot != null) "${sequence.cameraSystem} · ${shot.lensMm}" else sequence.cameraSystem,
+                    movement = shot?.movement?.ifBlank { "Estático" } ?: "Cobertura",
+                    estimatedMinutes = estMinutes,
+                    technicalNotes = notes
+                )
+            )
+        }
+        return rows
+    }
+
+    fun appendDictatedTranscript(existing: String, dictated: String): String {
+        val cleanDictation = dictated.trim()
+        if (cleanDictation.isEmpty()) return existing
+        val normalized = cleanDictation.replaceFirstChar { ch ->
+            if (ch.isLowerCase()) ch.titlecase(java.util.Locale.getDefault()) else ch.toString()
+        }
+        val punctuated = if (normalized.last() in charArrayOf('.', '!', '?', '…')) {
+            normalized
+        } else {
+            "$normalized."
+        }
+        val cleanExisting = existing.trimEnd()
+        return if (cleanExisting.isBlank()) {
+            punctuated
+        } else {
+            "$cleanExisting\n$punctuated"
+        }
+    }
 }

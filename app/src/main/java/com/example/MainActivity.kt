@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -16,15 +17,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.example.data.repository.AuthRepository
-import com.example.data.repository.LOCAL_GUEST_UID
 import com.example.data.repository.StudioRepository
 import com.example.security.configureAppCheck
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.MainStudioScreen
 import com.example.ui.theme.LumenReelTheme
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -73,8 +76,11 @@ private fun LumenReelRoot(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val studioRepository = remember {
+        StudioRepository.getInstance(context.applicationContext)
+    }
     val authRepository = remember {
-        AuthRepository(StudioRepository(context.applicationContext))
+        AuthRepository(studioRepository)
     }
 
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
@@ -82,38 +88,64 @@ private fun LumenReelRoot(
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { auth ->
-            currentUser = auth.currentUser
+            val nextUser = auth.currentUser
+            if (nextUser?.uid != currentUser?.uid) {
+                studioRepository.clearSessionCache()
+            }
+            currentUser = nextUser
         }
         Firebase.auth.addAuthStateListener(listener)
         onDispose { Firebase.auth.removeAuthStateListener(listener) }
     }
 
-    val activeUserId = currentUser?.uid ?: LOCAL_GUEST_UID
-    key(activeUserId) {
-        MainStudioScreen(
-            currentUser = currentUser,
-            authStatusMessage = authStatusMessage,
-            onClearAuthStatus = { authStatusMessage = null },
-            onOptionalGoogleSignIn = {
-                scope.launch {
-                    authStatusMessage = null
-                    authRepository.signInInteractive(context)
-                        .onSuccess {
-                            currentUser = Firebase.auth.currentUser
-                        }
-                        .onFailure { err ->
-                            authStatusMessage = err.localizedMessage
-                                ?: "No se pudo conectar la cuenta de Google."
-                        }
-                }
-            },
-            onSignOut = {
-                scope.launch {
-                    authRepository.signOut(context)
-                    currentUser = Firebase.auth.currentUser
-                }
-            },
-            onShareFile = onShareFile
+    LaunchedEffect(currentUser?.uid) {
+        val user = currentUser
+        if (user != null) {
+            withContext(Dispatchers.IO) {
+                studioRepository.ensureUserProfile(
+                    userId = user.uid,
+                    displayName = user.displayName ?: "Director LumenReel",
+                    email = user.email ?: "${user.uid}@lumenreel.local"
+                )
+            }
+        }
+    }
+
+    val user = currentUser
+    if (user == null) {
+        AuthScreen(
+            authRepository = authRepository,
+            onSignedIn = {
+                currentUser = Firebase.auth.currentUser
+            }
         )
+    } else {
+        key(user.uid) {
+            MainStudioScreen(
+                currentUser = user,
+                authStatusMessage = authStatusMessage,
+                onClearAuthStatus = { authStatusMessage = null },
+                onOptionalGoogleSignIn = {
+                    scope.launch {
+                        authStatusMessage = null
+                        authRepository.signInInteractive(context)
+                            .onSuccess {
+                                currentUser = Firebase.auth.currentUser
+                            }
+                            .onFailure { err ->
+                                authStatusMessage = err.localizedMessage
+                                    ?: "No se pudo conectar la cuenta de Google."
+                            }
+                    }
+                },
+                onSignOut = {
+                    scope.launch {
+                        authRepository.signOut(context)
+                        currentUser = Firebase.auth.currentUser
+                    }
+                },
+                onShareFile = onShareFile
+            )
+        }
     }
 }

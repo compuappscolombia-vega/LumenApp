@@ -41,11 +41,19 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+
+data class UserProfileState(
+    val uid: String = "",
+    val displayName: String = "",
+    val email: String = "",
+    val preferredStyle: String = ""
+)
 
 class StudioRepository(
     private val firestoreProvider: () -> FirebaseFirestore,
@@ -73,6 +81,11 @@ class StudioRepository(
 
     val sessionState = StudioSessionStateHolder()
     private val _firestoreSequenceCache = MutableStateFlow<Map<String, List<ProductionSequence>>>(emptyMap())
+
+    fun clearSessionCache() {
+        sessionState.reset()
+        _firestoreSequenceCache.value = emptyMap()
+    }
 
     private fun cacheKey(userId: String, projectId: String): String = "$userId::$projectId"
 
@@ -333,6 +346,66 @@ class StudioRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeUserProfile(userId: String): Flow<UserProfileState?> {
+        if (isLocalMode(userId)) {
+            return flowOf(
+                UserProfileState(
+                    uid = userId,
+                    displayName = "Director Local",
+                    email = "",
+                    preferredStyle = ""
+                )
+            )
+        }
+        return db.collection("users").document(userId)
+            .snapshots(MetadataChanges.INCLUDE)
+            .map { doc ->
+                if (!doc.exists()) null
+                else UserProfileState(
+                    uid = doc.getString("uid") ?: userId,
+                    displayName = doc.getString("displayName") ?: "",
+                    email = doc.getString("email") ?: "",
+                    preferredStyle = doc.getString("preferredStyle") ?: ""
+                )
+            }
+    }
+
+    suspend fun updateUserPreferredStyle(
+        userId: String,
+        preferredStyle: String
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return Result.success(Unit)
+        }
+        val path = "users/$userId"
+        return try {
+            val uid = requireUserId(userId)
+            val safeStyle = preferredStyle.trim().take(160)
+            val docRef = db.document("users/$uid")
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                val user = auth.currentUser
+                ensureUserProfile(
+                    userId = uid,
+                    displayName = user?.displayName ?: "Director LumenReel",
+                    email = user?.email ?: "${uid}@lumenreel.local"
+                ).getOrThrow()
+            }
+            docRef.update(
+                mapOf(
+                    "preferredStyle" to safeStyle,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
             Result.failure(e)
         }
     }

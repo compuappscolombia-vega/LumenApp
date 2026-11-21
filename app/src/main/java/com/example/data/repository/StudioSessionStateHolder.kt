@@ -25,4 +25,23 @@ class StudioSessionStateHolder {
     val agentFocusByProject = MutableStateFlow<Map<String, AgentRoleFocus>>(emptyMap())
     val agentDraftByProject = MutableStateFlow<Map<String, String>>(emptyMap())
     val localFramePaths = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    fun reset() {
+        selectedProjectId.value = ""
+        selectedSequenceId.value = ""
+        activeTab.value = WorkspaceTab.AGENT
+        searchQuery.value = ""
+        showDashboard.value = true
+        showIngestSheet.value = false
+        sequencesByProject.value = emptyMap()
+        ingestDrafts.value = emptyMap()
+        directorDraftsBySeq.value = emptyMap()
+        visionRatingsBySeq.value = emptyMap()
+        visionNotesBySeq.value = emptyMap()
+        selectedShotIndexBySeq.value = emptyMap()
+        stage3DModeBySeq.value = emptyMap()
+        agentFocusByProject.value = emptyMap()
+        agentDraftByProject.value = emptyMap()
+        localFramePaths.value = emptyMap()
+    }
 }
