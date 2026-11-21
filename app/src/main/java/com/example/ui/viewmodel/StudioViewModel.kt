@@ -95,24 +95,26 @@ class StudioViewModel(
     private val currentUserId: String
 ) : ViewModel() {
 
-    private val _selectedProjectId = MutableStateFlow("")
-    private val _selectedSequenceId = MutableStateFlow("")
-    private val _activeTab = MutableStateFlow(WorkspaceTab.AGENT)
-    private val _searchQuery = MutableStateFlow("")
-    private val _showDashboard = MutableStateFlow(true)
-    private val _showIngestSheet = MutableStateFlow(false)
+    private val session = repository.sessionState
 
-    private val _sequencesByProject = MutableStateFlow<Map<String, List<ProductionSequence>>>(emptyMap())
-    private val _localFramePaths = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val _selectedProjectId get() = session.selectedProjectId
+    private val _selectedSequenceId get() = session.selectedSequenceId
+    private val _activeTab get() = session.activeTab
+    private val _searchQuery get() = session.searchQuery
+    private val _showDashboard get() = session.showDashboard
+    private val _showIngestSheet get() = session.showIngestSheet
 
-    private val _ingestDrafts = MutableStateFlow<Map<String, IngestDraftState>>(emptyMap())
-    private val _directorDraftsBySeq = MutableStateFlow<Map<String, DirectorDraftEdits>>(emptyMap())
-    private val _visionRatingsBySeq = MutableStateFlow<Map<String, Int>>(emptyMap())
-    private val _visionNotesBySeq = MutableStateFlow<Map<String, String>>(emptyMap())
-    private val _selectedShotIndexBySeq = MutableStateFlow<Map<String, Int>>(emptyMap())
-    private val _stage3DModeBySeq = MutableStateFlow<Map<String, Boolean>>(emptyMap())
-    private val _agentFocusByProject = MutableStateFlow<Map<String, AgentRoleFocus>>(emptyMap())
-    private val _agentDraftByProject = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val _sequencesByProject get() = session.sequencesByProject
+    private val _localFramePaths get() = session.localFramePaths
+
+    private val _ingestDrafts get() = session.ingestDrafts
+    private val _directorDraftsBySeq get() = session.directorDraftsBySeq
+    private val _visionRatingsBySeq get() = session.visionRatingsBySeq
+    private val _visionNotesBySeq get() = session.visionNotesBySeq
+    private val _selectedShotIndexBySeq get() = session.selectedShotIndexBySeq
+    private val _stage3DModeBySeq get() = session.stage3DModeBySeq
+    private val _agentFocusByProject get() = session.agentFocusByProject
+    private val _agentDraftByProject get() = session.agentDraftByProject
 
     private val _isProducing = MutableStateFlow(false)
     private val _isAnalyzingAudio = MutableStateFlow(false)
@@ -153,7 +155,11 @@ class StudioViewModel(
                     _sequencesByProject.update { prev -> prev + (pid to seqs) }
                     if (_selectedSequenceId.value.isBlank() && seqs.isNotEmpty()) {
                         _selectedSequenceId.value = seqs.first().id
-                    } else if (_selectedSequenceId.value.isNotBlank() && seqs.none { it.id == _selectedSequenceId.value }) {
+                    } else if (
+                        _selectedSequenceId.value.isNotBlank() &&
+                        seqs.none { it.id == _selectedSequenceId.value } &&
+                        !_isProducing.value
+                    ) {
                         _selectedSequenceId.value = seqs.firstOrNull()?.id.orEmpty()
                     }
                     seqs
@@ -165,7 +171,7 @@ class StudioViewModel(
                     if (fsErr == null && error is CancellationException) throw error
                     Log.w(TAG, "Error observing sequences", fsErr ?: error)
                     _errorBanner.value = friendlyFirestoreMessage(fsErr ?: error)
-                    emit(emptyList())
+                    emit(_sequencesByProject.value[pid].orEmpty())
                 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
@@ -266,7 +272,11 @@ class StudioViewModel(
             is UiState.Success -> {
                 val cachedMap = _sequencesByProject.value
                 val enrichedProjects = projResult.data.map { proj ->
-                    val rawSeqs = if (proj.id == sel.selectedProjectId) repoData.activeSeqs else (cachedMap[proj.id] ?: emptyList())
+                    val rawSeqs = if (proj.id == sel.selectedProjectId) {
+                        if (repoData.activeSeqs.isNotEmpty()) repoData.activeSeqs else (cachedMap[proj.id] ?: emptyList())
+                    } else {
+                        cachedMap[proj.id] ?: emptyList()
+                    }
                     val mergedSeqs = rawSeqs.map { seq ->
                         seq.copy(
                             storyboardFrames = seq.storyboardFrames.map { frame ->
@@ -664,11 +674,16 @@ class StudioViewModel(
                     nextContinuityBible = nextBible,
                     nextSequencesCount = project.sequences.size + 1
                 ).onSuccess { saved ->
-                    _selectedSequenceId.value = saved.id
+                    val verified = repository.getSequenceById(currentUserId, project.id, saved.id) ?: saved
+                    _sequencesByProject.update { prev ->
+                        val cur = prev[project.id].orEmpty().filterNot { it.id == verified.id }
+                        prev + (project.id to (listOf(verified) + cur))
+                    }
+                    _selectedSequenceId.value = verified.id
                     _activeTab.value = WorkspaceTab.SCREENPLAY
                     _showIngestSheet.value = false
                     _ingestDrafts.update { it - project.id }
-                    _statusBanner.value = "Secuencia \"${saved.title}\" producida (${saved.screenplay.size} escenas, ${saved.shotList.size} planos)."
+                    _statusBanner.value = "Secuencia \"${verified.title}\" producida (${verified.screenplay.size} escenas, ${verified.shotList.size} planos)."
                     onDone()
                 }.onFailure { err ->
                     val msg = friendlyFirestoreMessage(err)
@@ -734,11 +749,16 @@ class StudioViewModel(
                     nextContinuityBible = nextBible,
                     nextSequencesCount = project.sequences.size + 1
                 ).onSuccess { saved ->
-                    _selectedSequenceId.value = saved.id
+                    val verified = repository.getSequenceById(currentUserId, project.id, saved.id) ?: saved
+                    _sequencesByProject.update { prev ->
+                        val cur = prev[project.id].orEmpty().filterNot { it.id == verified.id }
+                        prev + (project.id to (listOf(verified) + cur))
+                    }
+                    _selectedSequenceId.value = verified.id
                     _activeTab.value = WorkspaceTab.SCREENPLAY
                     _showIngestSheet.value = false
                     _ingestDrafts.update { it - project.id }
-                    _statusBanner.value = "Borrador manual \"${saved.title}\" guardado en Guion."
+                    _statusBanner.value = "Borrador manual \"${verified.title}\" guardado en Guion."
                     onDone()
                 }.onFailure { err ->
                     val msg = friendlyFirestoreMessage(err)
@@ -1134,7 +1154,7 @@ class StudioViewModel(
                     "APPLICATION_KEY missing from CreationExtras"
                 }
                 StudioViewModel(
-                    repository = StudioRepository(app),
+                    repository = StudioRepository.getInstance(app),
                     aiService = StudioAiService(),
                     currentUserId = currentUserId
                 )

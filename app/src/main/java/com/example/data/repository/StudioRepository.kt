@@ -33,12 +33,17 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
@@ -66,6 +71,25 @@ class StudioRepository(
     private val db: FirebaseFirestore by lazy { firestoreProvider() }
     private val auth: FirebaseAuth by lazy { authProvider() }
 
+    val sessionState = StudioSessionStateHolder()
+    private val _firestoreSequenceCache = MutableStateFlow<Map<String, List<ProductionSequence>>>(emptyMap())
+
+    private fun cacheKey(userId: String, projectId: String): String = "$userId::$projectId"
+
+    private fun upsertCachedSequence(userId: String, projectId: String, sequence: ProductionSequence) {
+        val key = cacheKey(userId, projectId)
+        _firestoreSequenceCache.update { map ->
+            val current = map[key].orEmpty().filterNot { it.id == sequence.id }
+            val next = (listOf(sequence) + current).sortedByDescending { it.createdAtMillis }
+            map + (key to next)
+        }
+        sessionState.sequencesByProject.update { map ->
+            val current = map[projectId].orEmpty().filterNot { it.id == sequence.id }
+            val next = (listOf(sequence) + current).sortedByDescending { it.createdAtMillis }
+            map + (projectId to next)
+        }
+    }
+
     private fun isLocalMode(userId: String): Boolean =
         localStore != null && (userId == LOCAL_GUEST_UID || auth.currentUser == null)
 
@@ -87,8 +111,7 @@ class StudioRepository(
         }
         return db.collection("users").document(userId)
             .collection("projects")
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
-            .snapshots()
+            .snapshots(MetadataChanges.INCLUDE)
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc ->
                     val dto = doc.toObject(
@@ -107,7 +130,7 @@ class StudioRepository(
                         createdAtMillis = (dto.createdAt ?: Timestamp.now()).toDate().time,
                         updatedAtMillis = (dto.updatedAt ?: dto.createdAt ?: Timestamp.now()).toDate().time
                     )
-                }
+                }.sortedByDescending { it.updatedAtMillis }
             }
     }
 
@@ -115,14 +138,70 @@ class StudioRepository(
         if (isLocalMode(userId)) {
             return localStore!!.observeSequences(projectId)
         }
-        return db.collection("users").document(userId)
+        val key = cacheKey(userId, projectId)
+        val remoteFlow = db.collection("users").document(userId)
             .collection("projects").document(projectId)
             .collection("sequences")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .snapshots()
+            .snapshots(MetadataChanges.INCLUDE)
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc -> parseSequenceDocument(doc) }
             }
+            .onStart {
+                val initialCached = _firestoreSequenceCache.value[key].orEmpty()
+                if (initialCached.isNotEmpty()) {
+                    emit(initialCached)
+                }
+            }
+        return combine(remoteFlow, _firestoreSequenceCache) { remote, cacheMap ->
+            val cached = cacheMap[key].orEmpty()
+            val merged = mergeSequenceLists(remote = remote, cached = cached)
+            sessionState.sequencesByProject.update { prev -> prev + (projectId to merged) }
+            merged
+        }
+    }
+
+    private fun mergeSequenceLists(
+        remote: List<ProductionSequence>,
+        cached: List<ProductionSequence>
+    ): List<ProductionSequence> {
+        if (cached.isEmpty()) return remote.sortedByDescending { it.createdAtMillis }
+        val byId = LinkedHashMap<String, ProductionSequence>()
+        for (seq in remote) {
+            byId[seq.id] = seq
+        }
+        for (cachedSeq in cached) {
+            val remoteSeq = byId[cachedSeq.id]
+            if (remoteSeq == null || cachedSeq.updatedAtMillis > remoteSeq.updatedAtMillis) {
+                byId[cachedSeq.id] = cachedSeq
+            }
+        }
+        return byId.values.sortedByDescending { it.createdAtMillis }
+    }
+
+    suspend fun getSequenceById(
+        userId: String,
+        projectId: String,
+        sequenceId: String
+    ): ProductionSequence? {
+        if (sequenceId.isBlank()) return null
+        if (isLocalMode(userId)) {
+            return localStore!!.observeSequences(projectId).first().firstOrNull { it.id == sequenceId }
+        }
+        val cached = _firestoreSequenceCache.value[cacheKey(userId, projectId)]
+            ?.firstOrNull { it.id == sequenceId }
+        if (cached != null) return cached
+        return try {
+            val doc = db.collection("users").document(userId)
+                .collection("projects").document(projectId)
+                .collection("sequences").document(sequenceId)
+                .get()
+                .await()
+            parseSequenceDocument(doc)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun observeAgentMessages(userId: String, projectId: String): Flow<List<AgentMessage>> {
@@ -132,8 +211,7 @@ class StudioRepository(
         return db.collection("users").document(userId)
             .collection("projects").document(projectId)
             .collection("agent_messages")
-            .orderBy("createdAt", Query.Direction.ASCENDING)
-            .snapshots()
+            .snapshots(MetadataChanges.INCLUDE)
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc ->
                     val dto = doc.toObject(
@@ -148,7 +226,7 @@ class StudioRepository(
                         actions = dto.actions.orEmpty(),
                         createdAtMillis = (dto.createdAt ?: Timestamp.now()).toDate().time
                     )
-                }
+                }.sortedBy { it.createdAtMillis }
             }
     }
 
@@ -158,8 +236,7 @@ class StudioRepository(
         }
         return db.collection("users").document(userId)
             .collection("learning_memory")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .snapshots()
+            .snapshots(MetadataChanges.INCLUDE)
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc ->
                     val dto = doc.toObject(
@@ -174,7 +251,7 @@ class StudioRepository(
                         sourceProjectTitle = dto.sourceProjectTitle,
                         createdAtMillis = (dto.createdAt ?: Timestamp.now()).toDate().time
                     )
-                }
+                }.sortedByDescending { it.createdAtMillis }
             }
     }
 
@@ -197,8 +274,10 @@ class StudioRepository(
             versionStatus = SequenceVersionStatus.fromWire(data["versionStatus"] as? String),
             sourceType = SourceMaterialType.fromWire(data["sourceType"] as? String),
             sourceFilename = seqMap["sourceFilename"] as? String,
-            directorStyle = data["directorStyle"] as? String ?: "",
-            aspectRatio = data["aspectRatio"] as? String ?: "2.39:1",
+            directorStyle = (seqMap["directorStyle"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (data["directorStyle"] as? String ?: ""),
+            aspectRatio = (seqMap["aspectRatio"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (data["aspectRatio"] as? String ?: "2.39:1"),
             cameraSystem = seqMap["cameraSystem"] as? String ?: "ARRI Alexa 65",
             lensPackage = seqMap["lensPackage"] as? String ?: "Cooke Anamorphic /i",
             filmStockOrLut = seqMap["filmStockOrLut"] as? String ?: "Kodak 2383 Print LUT",
@@ -343,6 +422,7 @@ class StudioRepository(
                 msgDoc.reference.delete().await()
             }
             projRef.delete().await()
+            _firestoreSequenceCache.update { it - cacheKey(userId, projectId) }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -366,12 +446,15 @@ class StudioRepository(
                 sequence,
                 nextContinuityBible,
                 nextSequencesCount
-            )
+            ).onSuccess { saved ->
+                upsertCachedSequence(userId, projectId, saved)
+            }
         }
         val seqId = sequence.id.ifBlank { newSafeDocId("seq") }
         val seqPath = "users/$userId/projects/$projectId/sequences/$seqId"
         return try {
             requireUserId(userId)
+            val now = System.currentTimeMillis()
             val cleanSeq = sequence.copy(
                 id = seqId,
                 projectId = projectId,
@@ -381,7 +464,9 @@ class StudioRepository(
                 aspectRatio = sequence.aspectRatio.trim().take(24),
                 logline = sequence.logline.trim().take(1200),
                 directorVision = sequence.directorVision.trim().take(6000),
-                continuitySummary = sequence.continuitySummary.trim().take(3000)
+                continuitySummary = sequence.continuitySummary.trim().take(3000),
+                createdAtMillis = if (sequence.createdAtMillis > 0L) sequence.createdAtMillis else now,
+                updatedAtMillis = now
             )
             val seqPayload = mutableMapOf<String, Any>(
                 "projectId" to projectId,
@@ -398,18 +483,20 @@ class StudioRepository(
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
-            db.document(seqPath).set(seqPayload).await()
-
             val projPath = "users/$userId/projects/$projectId"
-            db.document(projPath).update(
-                mapOf(
-                    "sequencesCount" to nextSequencesCount.coerceIn(0, 1000).toLong(),
-                    "assetsCount" to 0L,
-                    "continuityBible" to nextContinuityBible.trim().take(20000),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            val projUpdate = mapOf(
+                "sequencesCount" to nextSequencesCount.coerceIn(0, 1000).toLong(),
+                "assetsCount" to 0L,
+                "continuityBible" to nextContinuityBible.trim().take(20000),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
 
+            db.runBatch { batch ->
+                batch.set(db.document(seqPath), seqPayload)
+                batch.update(db.document(projPath), projUpdate)
+            }.await()
+
+            upsertCachedSequence(userId, projectId, cleanSeq)
             Result.success(cleanSeq)
         } catch (e: CancellationException) {
             throw e
@@ -425,7 +512,9 @@ class StudioRepository(
         sequence: ProductionSequence
     ): Result<Unit> {
         if (isLocalMode(userId)) {
-            return localStore!!.updateDraftSequence(sequence)
+            return localStore!!.updateDraftSequence(sequence).onSuccess {
+                upsertCachedSequence(userId, projectId, sequence)
+            }
         }
         val path = "users/$userId/projects/$projectId/sequences/${sequence.id}"
         return try {
@@ -433,16 +522,25 @@ class StudioRepository(
             require(sequence.versionStatus == SequenceVersionStatus.DRAFT) {
                 "Solo las secuencias en borrador pueden editarse."
             }
+            val now = System.currentTimeMillis()
+            val cleanSeq = sequence.copy(
+                title = sequence.title.trim().ifBlank { "Secuencia" }.take(200),
+                logline = sequence.logline.trim().take(1200),
+                directorVision = sequence.directorVision.trim().take(6000),
+                continuitySummary = sequence.continuitySummary.trim().take(3000),
+                updatedAtMillis = now
+            )
             db.document(path).update(
                 mapOf(
-                    "title" to sequence.title.trim().take(200),
-                    "logline" to sequence.logline.trim().take(1200),
-                    "directorVision" to sequence.directorVision.trim().take(6000),
-                    "sequenceData" to sequence.buildSequenceDataMap(),
-                    "continuitySummary" to sequence.continuitySummary.trim().take(3000),
+                    "title" to cleanSeq.title,
+                    "logline" to cleanSeq.logline,
+                    "directorVision" to cleanSeq.directorVision,
+                    "sequenceData" to cleanSeq.buildSequenceDataMap(),
+                    "continuitySummary" to cleanSeq.continuitySummary,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            upsertCachedSequence(userId, projectId, cleanSeq)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -494,6 +592,15 @@ class StudioRepository(
                 )
             ).await()
 
+            upsertCachedSequence(
+                userId,
+                projectId,
+                sequence.copy(
+                    versionStatus = SequenceVersionStatus.FINAL,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+
             if (sequence.versionStatus != SequenceVersionStatus.FINAL) {
                 val autoLessons = LearningEngine.extractAutomaticLessons(projectTitle, sequence)
                 for (lesson in autoLessons) {
@@ -536,6 +643,15 @@ class StudioRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+
+            upsertCachedSequence(
+                userId,
+                projectId,
+                sequence.copy(
+                    sequenceRating = safeRating,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
 
             if (safeRating >= 4) {
                 val lessons = StudioIntelligence.buildRatedChoiceLessons(
@@ -679,5 +795,15 @@ class StudioRepository(
             handleFirestoreError(e, OperationType.DELETE, path)
             Result.failure(e)
         }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: StudioRepository? = null
+
+        fun getInstance(context: Context): StudioRepository =
+            instance ?: synchronized(this) {
+                instance ?: StudioRepository(context.applicationContext).also { instance = it }
+            }
     }
 }

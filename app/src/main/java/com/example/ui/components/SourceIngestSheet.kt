@@ -43,6 +43,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -212,14 +213,12 @@ fun SourceIngestContent(
         attachedFile.mimeType != "application/pdf"
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier.fillMaxSize()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -245,6 +244,16 @@ fun SourceIngestContent(
                 }
             }
         }
+        HorizontalDivider(color = StudioBorder)
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 
         // Sequence Title
         OutlinedTextField(
@@ -644,66 +653,76 @@ fun SourceIngestContent(
                 )
             }
         }
+        }
 
-        // Visible Validation / AI Error directly inside sheet
-        if (!draft.ingestError.isNullOrBlank()) {
-            Surface(
-                color = ErrorContainerDark,
-                shape = RoundedCornerShape(10.dp),
+        // Pinned Footer: Error Banner + Primary AI Produce + Secondary Manual Draft CTA
+        HorizontalDivider(color = StudioBorder)
+        Surface(
+            color = StudioDeepPanel,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("ingest_error_banner")
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = draft.ingestError,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = ErrorLightText,
-                    modifier = Modifier.padding(12.dp)
-                )
+                if (!draft.ingestError.isNullOrBlank()) {
+                    Surface(
+                        color = ErrorContainerDark,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("ingest_error_banner")
+                    ) {
+                        Text(
+                            text = draft.ingestError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ErrorLightText,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onProduceSequence,
+                    enabled = !isProducing && !isAnalyzingAudio,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AmberGold,
+                        contentColor = ObsidianBg
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("produce_sequence_button")
+                ) {
+                    if (isProducing) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, color = ObsidianBg, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.ingest_producing), fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.ingest_produce_cta), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onCreateManualDraft,
+                    enabled = !isProducing && !isAnalyzingAudio,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("create_manual_draft_button")
+                ) {
+                    Icon(Icons.Rounded.EditNote, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("Crear borrador manual (sin IA) en Guion", color = TealAtmos, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
-
-        // Primary CTA: Produce with Gemini AI
-        Button(
-            onClick = onProduceSequence,
-            enabled = !isProducing && !isAnalyzingAudio,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = AmberGold,
-                contentColor = ObsidianBg
-            ),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .testTag("produce_sequence_button")
-        ) {
-            if (isProducing) {
-                CircularProgressIndicator(strokeWidth = 2.dp, color = ObsidianBg, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.ingest_producing), fontWeight = FontWeight.Bold)
-            } else {
-                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.ingest_produce_cta), fontWeight = FontWeight.Bold)
-            }
-        }
-
-        // Secondary CTA: Create Manual Editable Draft (no AI)
-        OutlinedButton(
-            onClick = onCreateManualDraft,
-            enabled = !isProducing && !isAnalyzingAudio,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("create_manual_draft_button")
-        ) {
-            Icon(Icons.Rounded.EditNote, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.size(8.dp))
-            Text("Crear borrador manual (sin IA) en Guion", color = TealAtmos, fontWeight = FontWeight.SemiBold)
-        }
-
-        Spacer(Modifier.height(16.dp))
     }
 }
 

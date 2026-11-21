@@ -243,7 +243,7 @@ class StudioFunctionalCujTest {
 
     @Test
     fun `viewmodel CUJ preserves director and ingest adjustments across tabs and saves sequences cleanly`() = runTest {
-        val store = LocalStudioStore(context)
+        val store = LocalStudioStore(context, testDispatcher)
         val repo = StudioRepository(databaseId = "unused", localStore = store)
         val ai = FakeStudioAiClient()
         val vm = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
@@ -352,7 +352,7 @@ class StudioFunctionalCujTest {
 
     @Test
     fun `manual draft creation and validation errors surface cleanly inside ingest draft state`() = runTest {
-        val store = LocalStudioStore(context)
+        val store = LocalStudioStore(context, testDispatcher)
         val repo = StudioRepository(databaseId = "unused", localStore = store)
         val ai = FakeStudioAiClient(shouldFailProduce = true)
         val vm = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
@@ -445,14 +445,76 @@ class StudioFunctionalCujTest {
         }
 
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("ingest_error_banner").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("ingest_error_banner").assertIsDisplayed()
 
         composeRule.onNodeWithTag("ingest_paste_source_button").performScrollTo().performClick()
         composeRule.waitForIdle()
         assertTrue(draft.sourceText.contains("Texto copiado desde el portapapeles"))
 
-        composeRule.onNodeWithTag("create_manual_draft_button").performScrollTo().performClick()
+        composeRule.onNodeWithTag("create_manual_draft_button").assertIsDisplayed().performClick()
         composeRule.waitForIdle()
         assertTrue(manualClicked)
+    }
+
+    @Test
+    fun `state repository retains active sequence, director edits, and script view across ViewModel recreation`() = runTest {
+        val store = LocalStudioStore(context, testDispatcher)
+        val repo = StudioRepository(databaseId = "unused", localStore = store)
+        val ai = FakeStudioAiClient()
+
+        // First ViewModel instance creates project, produces sequence, edits Director settings, switches to Screenplay
+        val vm1 = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
+        val job1 = backgroundScope.launch { vm1.projectsUiState.collect {} }
+
+        vm1.createProject("Luz de Invierno", "Épica Monumental IMAX", SourceMaterialType.BOOK, "Biblia compartida")
+        val proj = awaitUiWhere(vm1) { it.activeProject?.title == "Luz de Invierno" }.activeProject!!
+
+        vm1.produceSequence(
+            project = proj,
+            lessons = emptyList(),
+            sequenceTitle = "Escena del Faro",
+            sourceType = SourceMaterialType.BOOK,
+            directorStyle = "Épica Monumental IMAX",
+            aspectRatio = "1.43:1",
+            thinkingDepth = ThinkingDepth.STANDARD,
+            continuityBible = proj.continuityBible,
+            sourceText = "Texto narrativo extenso sobre un faro solitario frente al mar del sur.",
+            attachedFilename = null,
+            attachedMimeType = null,
+            attachedBytes = null
+        )
+
+        var ui1 = awaitUiWhere(vm1) { it.activeSequence?.title == "Escena del Faro" }
+        val seq = ui1.activeSequence!!
+        assertNotNull(repo.getSequenceById(LOCAL_GUEST_UID, proj.id, seq.id))
+
+        vm1.selectTab(WorkspaceTab.VISION)
+        vm1.updateDirectorDraft(proj, seq) {
+            it.copy(cameraSystem = "RED V-Raptor XL", directorVision = "Toma anamórfica con neblina")
+        }
+        vm1.selectTab(WorkspaceTab.SCREENPLAY)
+        ui1 = awaitUiWhere(vm1) {
+            it.activeTab == WorkspaceTab.SCREENPLAY && it.activeDirectorDraft.cameraSystem == "RED V-Raptor XL"
+        }
+        assertEquals("RED V-Raptor XL", ui1.activeDirectorDraft.cameraSystem)
+        job1.cancel()
+
+        // Second ViewModel instance attached to the same State Repository immediately restores everything
+        val vm2 = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
+        val job2 = backgroundScope.launch { vm2.projectsUiState.collect {} }
+        var ui2 = awaitUiWhere(vm2) {
+            it.activeProject?.id == proj.id && it.activeSequence?.id == seq.id
+        }
+        assertEquals(WorkspaceTab.SCREENPLAY, ui2.activeTab)
+        assertEquals("Escena del Faro", ui2.activeSequence?.title)
+        assertEquals(1, ui2.activeSequence?.screenplay?.size)
+        assertEquals("RED V-Raptor XL", ui2.activeDirectorDraft.cameraSystem)
+        assertTrue(ui2.activeDirectorDraft.isDirty)
+
+        vm2.selectTab(WorkspaceTab.VISION)
+        ui2 = awaitUiWhere(vm2) { it.activeTab == WorkspaceTab.VISION }
+        assertEquals("Toma anamórfica con neblina", ui2.activeDirectorDraft.directorVision)
+
+        job2.cancel()
     }
 }

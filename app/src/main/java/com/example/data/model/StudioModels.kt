@@ -445,6 +445,8 @@ data class ProductionSequence(
 ) {
     fun buildSequenceDataMap(): Map<String, Any> {
         val data = mutableMapOf<String, Any>(
+            "directorStyle" to directorStyle,
+            "aspectRatio" to aspectRatio,
             "cameraSystem" to cameraSystem,
             "lensPackage" to lensPackage,
             "filmStockOrLut" to filmStockOrLut,

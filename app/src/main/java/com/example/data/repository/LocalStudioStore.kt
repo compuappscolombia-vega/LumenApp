@@ -21,6 +21,7 @@ import com.example.data.model.StoryboardCard
 import com.example.data.model.VfxBreakdown
 import com.example.data.util.LearningEngine
 import com.example.data.util.StudioIntelligence
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -201,7 +202,10 @@ private data class LocalStudioSnapshot(
     val lessons: List<LocalLessonEntry> = emptyList()
 )
 
-class LocalStudioStore(context: Context) {
+class LocalStudioStore(
+    context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
 
     private val storeFile = File(context.applicationContext.filesDir, LOCAL_STORE_FILENAME)
     private val mutex = Mutex()
@@ -230,7 +234,7 @@ class LocalStudioStore(context: Context) {
     }
 
     private suspend fun mutate(transform: (LocalStudioSnapshot) -> LocalStudioSnapshot) {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             mutex.withLock {
                 val updated = transform(snapshotFlow.value)
                 snapshotFlow.value = updated
