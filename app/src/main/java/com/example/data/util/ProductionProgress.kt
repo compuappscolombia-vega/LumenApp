@@ -201,3 +201,171 @@ object ProductionProgress {
         )
     }
 }
+
+data class ProjectSequenceBarItem(
+    val projectId: String,
+    val projectTitle: String,
+    val draftCount: Int,
+    val finalCount: Int,
+    val totalCount: Int
+)
+
+data class SequenceScriptMetric(
+    val sequenceId: String,
+    val sequenceTitle: String,
+    val projectTitle: String,
+    val scenesCount: Int,
+    val beatsCount: Int,
+    val wordsCount: Int
+)
+
+data class ProjectActivityPoint(
+    val dayKeyMillis: Long,
+    val label: String,
+    val createdCount: Int,
+    val updatedCount: Int,
+    val totalEvents: Int
+)
+
+data class StudioMetricsReport(
+    val totalProjects: Int,
+    val totalSequences: Int,
+    val draftSequences: Int,
+    val finalSequences: Int,
+    val totalScenes: Int,
+    val totalBeats: Int,
+    val totalScriptWords: Int,
+    val averageWordsPerSequence: Int,
+    val estimatedMinutes: Int,
+    val projectBars: List<ProjectSequenceBarItem>,
+    val scriptLengthBySequence: List<SequenceScriptMetric>,
+    val activityTimeline: List<ProjectActivityPoint>
+)
+
+object StudioMetricsCalculator {
+    private const val ONE_DAY_MS = 86_400_000L
+
+    fun countWords(text: String): Int {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return 0
+        return trimmed.split(Regex("\\s+")).count { it.isNotBlank() }
+    }
+
+    fun computeMetrics(projects: List<ProductionProject>): StudioMetricsReport {
+        val allSequences = projects.flatMap { proj ->
+            proj.sequences.map { seq -> proj.title to seq }
+        }
+
+        val finalSequences = allSequences.count { (_, seq) ->
+            seq.versionStatus == SequenceVersionStatus.FINAL
+        }
+        val draftSequences = allSequences.count { (_, seq) ->
+            seq.versionStatus == SequenceVersionStatus.DRAFT
+        }
+        val reportedTotalSequences = maxOf(
+            allSequences.size,
+            projects.sumOf { maxOf(it.sequencesCount, it.sequences.size) }
+        )
+
+        val scriptMetrics = allSequences.map { (projectTitle, seq) ->
+            val scenes = seq.screenplay
+            val beats = scenes.sumOf { it.beats.size }
+            val words = scenes.sumOf { sc ->
+                countWords(sc.slugline) + sc.beats.sumOf { beat ->
+                    countWords(beat.character.orEmpty()) +
+                        countWords(beat.parenthetical.orEmpty()) +
+                        countWords(beat.text)
+                }
+            }
+            SequenceScriptMetric(
+                sequenceId = seq.id,
+                sequenceTitle = seq.title.ifBlank { "Secuencia sin título" },
+                projectTitle = projectTitle,
+                scenesCount = scenes.size,
+                beatsCount = beats,
+                wordsCount = words
+            )
+        }.sortedByDescending { it.wordsCount.coerceAtLeast(it.beatsCount * 10) }
+
+        val totalScenes = scriptMetrics.sumOf { it.scenesCount }
+        val totalBeats = scriptMetrics.sumOf { it.beatsCount }
+        val totalWords = scriptMetrics.sumOf { it.wordsCount }
+        val avgWords = if (scriptMetrics.isNotEmpty()) totalWords / scriptMetrics.size else 0
+        val estimatedMinutes = allSequences.sumOf { (_, seq) ->
+            val sec = seq.shotList.sumOf { it.durationSec }
+            if (sec > 0.0) kotlin.math.ceil(sec / 60.0).toInt() else seq.screenplay.size
+        }
+
+        val projectBars = projects.map { proj ->
+            val finals = proj.sequences.count { it.versionStatus == SequenceVersionStatus.FINAL }
+            val drafts = proj.sequences.count { it.versionStatus == SequenceVersionStatus.DRAFT }
+            val total = maxOf(proj.sequences.size, proj.sequencesCount)
+            val normalizedDrafts = if (total > finals + drafts) total - finals else drafts
+            ProjectSequenceBarItem(
+                projectId = proj.id,
+                projectTitle = proj.title.ifBlank { "Sin título" },
+                draftCount = normalizedDrafts.coerceAtLeast(0),
+                finalCount = finals.coerceAtLeast(0),
+                totalCount = total.coerceAtLeast(finals + normalizedDrafts)
+            )
+        }.sortedByDescending { it.totalCount }
+
+        val dayBuckets = linkedMapOf<Long, Pair<Int, Int>>()
+        fun bucketKey(millis: Long): Long = if (millis > 0L) (millis / ONE_DAY_MS) * ONE_DAY_MS else 0L
+
+        projects.forEach { proj ->
+            val cKey = bucketKey(proj.createdAtMillis)
+            if (cKey > 0L) {
+                val cur = dayBuckets[cKey] ?: (0 to 0)
+                dayBuckets[cKey] = (cur.first + 1) to cur.second
+            }
+            val uKey = bucketKey(proj.updatedAtMillis)
+            if (uKey > 0L && uKey != cKey) {
+                val cur = dayBuckets[uKey] ?: (0 to 0)
+                dayBuckets[uKey] = cur.first to (cur.second + 1)
+            }
+            proj.sequences.forEach { seq ->
+                val scKey = bucketKey(seq.createdAtMillis)
+                if (scKey > 0L) {
+                    val cur = dayBuckets[scKey] ?: (0 to 0)
+                    dayBuckets[scKey] = (cur.first + 1) to cur.second
+                }
+                val suKey = bucketKey(seq.updatedAtMillis)
+                if (suKey > 0L && suKey != scKey) {
+                    val cur = dayBuckets[suKey] ?: (0 to 0)
+                    dayBuckets[suKey] = cur.first to (cur.second + 1)
+                }
+            }
+        }
+
+        val formatter = java.text.SimpleDateFormat("dd MMM", java.util.Locale.forLanguageTag("es-ES"))
+        val activityTimeline = dayBuckets.entries
+            .sortedBy { it.key }
+            .takeLast(10)
+            .map { (dayMillis, counts) ->
+                ProjectActivityPoint(
+                    dayKeyMillis = dayMillis,
+                    label = formatter.format(java.util.Date(dayMillis)),
+                    createdCount = counts.first,
+                    updatedCount = counts.second,
+                    totalEvents = counts.first + counts.second
+                )
+            }
+
+        return StudioMetricsReport(
+            totalProjects = projects.size,
+            totalSequences = reportedTotalSequences,
+            draftSequences = draftSequences,
+            finalSequences = finalSequences,
+            totalScenes = totalScenes,
+            totalBeats = totalBeats,
+            totalScriptWords = totalWords,
+            averageWordsPerSequence = avgWords,
+            estimatedMinutes = estimatedMinutes,
+            projectBars = projectBars,
+            scriptLengthBySequence = scriptMetrics,
+            activityTimeline = activityTimeline
+        )
+    }
+}
+

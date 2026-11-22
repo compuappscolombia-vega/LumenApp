@@ -466,6 +466,38 @@ data class ProductionSequence(
 
 @Keep
 @IgnoreExtraProperties
+@Serializable
+data class ProductionFolder(
+    val id: String = "",
+    val name: String = "",
+    val category: String = "script", // script | bible | schedule | visual | sound | vfx | field
+    val description: String = "",
+    val notes: String = "",
+    val targetTab: String = "screenplay" // screenplay | vision | shots | storyboard | agent
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "id" to id.take(64),
+        "name" to name.take(120),
+        "category" to category.take(40),
+        "description" to description.take(300),
+        "notes" to notes.take(2000),
+        "targetTab" to targetTab.take(40)
+    )
+
+    companion object {
+        fun fromMap(map: Map<*, *>): ProductionFolder = ProductionFolder(
+            id = map["id"] as? String ?: "",
+            name = map["name"] as? String ?: "",
+            category = map["category"] as? String ?: "script",
+            description = map["description"] as? String ?: "",
+            notes = map["notes"] as? String ?: "",
+            targetTab = map["targetTab"] as? String ?: "screenplay"
+        )
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
 data class StudioProjectDoc(
     @DocumentId val id: String = "",
     val ownerId: String = "",
@@ -473,6 +505,8 @@ data class StudioProjectDoc(
     val genreStyle: String = "",
     val defaultSourceType: String = "book",
     val continuityBible: String = "",
+    val templateId: String = "custom",
+    val productionFolders: List<ProductionFolder>? = null,
     val sequencesCount: Long = 0L,
     val assetsCount: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
@@ -486,6 +520,8 @@ data class ProductionProject(
     val genreStyle: String = "",
     val defaultSourceType: SourceMaterialType = SourceMaterialType.BOOK,
     val continuityBible: String = "",
+    val templateId: String = "custom",
+    val productionFolders: List<ProductionFolder> = emptyList(),
     val sequencesCount: Int = 0,
     val assetsCount: Int = 0,
     val createdAtMillis: Long = 0L,

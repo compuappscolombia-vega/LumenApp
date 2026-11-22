@@ -19,9 +19,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,7 +38,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,18 +49,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.util.LearningEngine
+import com.example.data.util.StudioLogic
 import com.example.ui.components.readClipboardText
+import com.example.ui.components.rememberVoiceDictationController
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
+import com.example.ui.theme.ErrorCrimson
 import com.example.ui.theme.IvoryPrimary
 import com.example.ui.theme.MutedStone
 import com.example.ui.theme.ObsidianBg
@@ -81,6 +92,7 @@ fun ScreenplayTabView(
         editingIndex: Int?
     ) -> Unit,
     onExportPdf: () -> Unit,
+    onSaveScriptSchedulePdf: () -> Unit = {},
     onExportMarkdown: () -> Unit,
     onExportFountain: () -> Unit,
     modifier: Modifier = Modifier
@@ -89,6 +101,7 @@ fun ScreenplayTabView(
     val isDraft = sequence.versionStatus == SequenceVersionStatus.DRAFT
     var editingSceneIndex by remember(sequence.id) { mutableStateOf<Int?>(null) }
     var showSceneEditor by remember(sequence.id) { mutableStateOf(false) }
+    var autoStartDictation by remember(sequence.id) { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Export & Authoring Action Bar
@@ -110,7 +123,7 @@ fun ScreenplayTabView(
                         onClick = onOpenIngest,
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(48.dp)
                             .testTag("screenplay_new_sequence_button")
                     ) {
                         Icon(Icons.Rounded.Add, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
@@ -121,17 +134,74 @@ fun ScreenplayTabView(
                         OutlinedButton(
                             onClick = {
                                 editingSceneIndex = null
+                                autoStartDictation = false
                                 showSceneEditor = true
                             },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(48.dp)
                                 .testTag("screenplay_add_scene_button")
                         ) {
                             Icon(Icons.Rounded.Add, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(4.dp))
                             Text("Añadir escena", color = TealAtmos, style = MaterialTheme.typography.labelMedium)
                         }
+                    }
+                }
+
+                if (isDraft) {
+                    OutlinedButton(
+                        onClick = {
+                            editingSceneIndex = null
+                            autoStartDictation = true
+                            showSceneEditor = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("screenplay_dictate_scene_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = stringResource(R.string.cd_voice_dictate_scene),
+                            tint = AmberGold,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text("Dictar nueva escena por micrófono", color = AmberGold, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onSaveScriptSchedulePdf,
+                        enabled = !isExporting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TealAtmos,
+                            contentColor = ObsidianBg,
+                            disabledContainerColor = StudioSurfaceElevated,
+                            disabledContentColor = MutedStone
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("save_script_schedule_pdf_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            text = stringResource(R.string.action_save_script_schedule_pdf),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
@@ -161,7 +231,7 @@ fun ScreenplayTabView(
                         )
                         Spacer(Modifier.size(6.dp))
                         Text(
-                            text = if (canExportPdf) "Bitácora PDF" else "PDF Bloqueado (Borrador)",
+                            text = if (canExportPdf) "Bitácora PDF" else "Bitácora Final Bloqueada",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -192,7 +262,7 @@ fun ScreenplayTabView(
                 }
                 if (!canExportPdf) {
                     Text(
-                        text = "Aprueba la secuencia como Versión Final en la barra superior para desbloquear la Bitácora PDF.",
+                        text = "Puedes guardar el Guion y Plan de Rodaje en tu dispositivo en cualquier momento. Aprueba la Versión Final para desbloquear la Bitácora Completa PDF.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MutedStone
                     )
@@ -220,6 +290,7 @@ fun ScreenplayTabView(
                             Button(
                                 onClick = {
                                     editingSceneIndex = null
+                                    autoStartDictation = false
                                     showSceneEditor = true
                                 },
                                 colors = ButtonDefaults.buttonColors(
@@ -265,10 +336,11 @@ fun ScreenplayTabView(
                                     IconButton(
                                         onClick = {
                                             editingSceneIndex = idx
+                                            autoStartDictation = false
                                             showSceneEditor = true
                                         },
                                         modifier = Modifier
-                                            .size(36.dp)
+                                            .minimumInteractiveComponentSize()
                                             .testTag("edit_scene_button_$idx")
                                     ) {
                                         Icon(
@@ -366,7 +438,11 @@ fun ScreenplayTabView(
         ScreenplaySceneEditorDialog(
             initialScene = existing,
             defaultSceneNumber = (sequence.screenplay.size + 1).toString(),
-            onDismiss = { showSceneEditor = false },
+            autoStartDictation = autoStartDictation,
+            onDismiss = {
+                autoStartDictation = false
+                showSceneEditor = false
+            },
             onSave = { number, slugline, timeOfDay, action, character, dialogue ->
                 onSaveSceneDraft(
                     number,
@@ -377,6 +453,7 @@ fun ScreenplayTabView(
                     dialogue,
                     editingSceneIndex
                 )
+                autoStartDictation = false
                 showSceneEditor = false
             }
         )
@@ -387,6 +464,7 @@ fun ScreenplayTabView(
 private fun ScreenplaySceneEditorDialog(
     initialScene: ScreenplayScene?,
     defaultSceneNumber: String,
+    autoStartDictation: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (
         sceneNumber: String,
@@ -414,6 +492,18 @@ private fun ScreenplaySceneEditorDialog(
     var actionText by remember { mutableStateOf(existingAction) }
     var dialogueCharacter by remember { mutableStateOf(firstDialogue?.character.orEmpty()) }
     var dialogueText by remember { mutableStateOf(firstDialogue?.text.orEmpty()) }
+
+    val voiceController = rememberVoiceDictationController { spoken ->
+        actionText = StudioLogic.appendDictatedTranscript(actionText, spoken)
+    }
+
+    var triggeredAutoStart by remember { mutableStateOf(false) }
+    LaunchedEffect(autoStartDictation) {
+        if (autoStartDictation && !triggeredAutoStart) {
+            triggeredAutoStart = true
+            voiceController.startOrStop()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -462,21 +552,93 @@ private fun ScreenplaySceneEditorDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Acción visual", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
-                    TextButton(
-                        onClick = {
-                            val clip = readClipboardText(context) ?: return@TextButton
-                            actionText = if (actionText.isBlank()) clip else "${actionText.trim()}\n$clip"
-                        }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.size(4.dp))
-                        Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                        TextButton(
+                            onClick = { voiceController.startOrStop() },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("scene_action_voice_button")
+                        ) {
+                            Icon(
+                                imageVector = if (voiceController.isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                                contentDescription = stringResource(R.string.cd_voice_dictate_scene),
+                                tint = if (voiceController.isListening) ErrorCrimson else TealAtmos,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.size(4.dp))
+                            Text(
+                                text = if (voiceController.isListening) "Detener" else "Dictar",
+                                color = if (voiceController.isListening) ErrorCrimson else TealAtmos,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                val clip = readClipboardText(context) ?: return@TextButton
+                                actionText = if (actionText.isBlank()) clip else "${actionText.trim()}\n$clip"
+                            },
+                            modifier = Modifier.minimumInteractiveComponentSize()
+                        ) {
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
+
+                if (voiceController.isListening) {
+                    Surface(
+                        color = TealContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, TealAtmos, RoundedCornerShape(8.dp))
+                            .testTag("scene_voice_partial_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = if (voiceController.partialTranscript.isNotBlank()) {
+                                    "Escuchando: «${voiceController.partialTranscript}»"
+                                } else {
+                                    "Escuchando tu narración… habla cerca del micrófono."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = IvoryPrimary
+                            )
+                        }
+                    }
+                }
+
+                if (!voiceController.errorMessage.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("scene_voice_error_text")
+                    ) {
+                        Text(
+                            text = voiceController.errorMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = actionText,
                     onValueChange = { actionText = it },
-                    placeholder = { Text("Describe lo que ve y escucha la cámara…", color = MutedStone) },
+                    placeholder = { Text("Describe lo que ve y escucha la cámara, o usa el micrófono…", color = MutedStone) },
                     minLines = 3,
                     maxLines = 6,
                     colors = sceneFieldColors(),

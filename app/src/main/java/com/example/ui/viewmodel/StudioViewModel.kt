@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -17,6 +18,7 @@ import com.example.data.model.DirectorDraftEdits
 import com.example.data.model.IngestDraftState
 import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
+import com.example.data.model.ProductionFolder
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
@@ -28,9 +30,11 @@ import com.example.data.model.StudioIntelligenceReport
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.WorkspaceTab
 import com.example.data.repository.StudioRepository
+import com.example.data.repository.UserProfileState
 import com.example.data.util.AgentLogic
 import com.example.data.util.LearningEngine
 import com.example.data.util.PdfExporter
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.StudioLogic
 import com.example.data.util.friendlyFirestoreMessage
@@ -60,6 +64,7 @@ sealed interface UiState<out T> {
 
 data class StudioUiState(
     val projects: List<ProductionProject> = emptyList(),
+    val userProfile: UserProfileState? = null,
     val activeProject: ProductionProject? = null,
     val activeSequence: ProductionSequence? = null,
     val agentMessages: List<AgentMessage> = emptyList(),
@@ -68,6 +73,7 @@ data class StudioUiState(
     val activeTab: WorkspaceTab = WorkspaceTab.AGENT,
     val searchQuery: String = "",
     val showDashboard: Boolean = true,
+    val showMetricsDashboard: Boolean = false,
     val showIngestSheet: Boolean = false,
     val activeIngestDraft: IngestDraftState = IngestDraftState(),
     val activeDirectorDraft: DirectorDraftEdits = DirectorDraftEdits(),
@@ -82,6 +88,7 @@ data class StudioUiState(
     val latestAudioReport: AudioAnalysisReport? = null,
     val isAgentBusy: Boolean = false,
     val isFinalizing: Boolean = false,
+    val isSavingToDb: Boolean = false,
     val isExporting: Boolean = false,
     val generatingFrameId: String? = null,
     val statusBanner: String? = null,
@@ -102,6 +109,7 @@ class StudioViewModel(
     private val _activeTab get() = session.activeTab
     private val _searchQuery get() = session.searchQuery
     private val _showDashboard get() = session.showDashboard
+    private val _showMetricsDashboard get() = session.showMetricsDashboard
     private val _showIngestSheet get() = session.showIngestSheet
 
     private val _sequencesByProject get() = session.sequencesByProject
@@ -121,6 +129,7 @@ class StudioViewModel(
     private val _latestAudioReport = MutableStateFlow<AudioAnalysisReport?>(null)
     private val _isAgentBusy = MutableStateFlow(false)
     private val _isFinalizing = MutableStateFlow(false)
+    private val _isSavingToDb = MutableStateFlow(false)
     private val _isExporting = MutableStateFlow(false)
     private val _generatingFrameId = MutableStateFlow<String?>(null)
     private val _statusBanner = MutableStateFlow<String?>(null)
@@ -201,14 +210,30 @@ class StudioViewModel(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
+    private val userProfileStream: StateFlow<UserProfileState?> =
+        repository.observeUserProfile(currentUserId)
+            .catch { error ->
+                val fsErr = generateSequence(error) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (fsErr == null && error is CancellationException) throw error
+                Log.w(TAG, "Error observing user profile", fsErr ?: error)
+                emit(null)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), null)
+
     private val busyFlags = combine(
-        _isProducing,
-        _isAnalyzingAudio,
-        _isAgentBusy,
-        _isFinalizing,
-        _isExporting
-    ) { producing, audio, agent, finalizing, exporting ->
-        BusyState(producing, audio, agent, finalizing, exporting)
+        combine(_isProducing, _isAnalyzingAudio, _isAgentBusy) { p, a, g -> Triple(p, a, g) },
+        combine(_isFinalizing, _isSavingToDb, _isExporting) { f, s, e -> Triple(f, s, e) }
+    ) { aiFlags, ioFlags ->
+        BusyState(
+            producing = aiFlags.first,
+            audio = aiFlags.second,
+            agent = aiFlags.third,
+            finalizing = ioFlags.first,
+            savingToDb = ioFlags.second,
+            exporting = ioFlags.third
+        )
     }
 
     private val navState = combine(
@@ -216,11 +241,20 @@ class StudioViewModel(
         _selectedSequenceId,
         _activeTab,
         _searchQuery,
-        combine(_showDashboard, _showIngestSheet, busyFlags) { dash, ingest, busy ->
-            Triple(dash, ingest, busy)
+        combine(_showDashboard, _showMetricsDashboard, _showIngestSheet, busyFlags) { dash, metrics, ingest, busy ->
+            ShellNavFlags(dash, metrics, ingest, busy)
         }
     ) { pId, sId, tab, query, shell ->
-        SelectionState(pId, sId, tab, query, shell.first, shell.second, shell.third)
+        SelectionState(
+            selectedProjectId = pId,
+            selectedSequenceId = sId,
+            activeTab = tab,
+            searchQuery = query,
+            showDashboard = shell.showDashboard,
+            showMetricsDashboard = shell.showMetricsDashboard,
+            showIngestSheet = shell.showIngestSheet,
+            busy = shell.busy
+        )
     }
 
     private val bannersState = combine(
@@ -255,9 +289,10 @@ class StudioViewModel(
         projectsStream,
         activeSequencesStream,
         activeMessagesStream,
-        lessonsStream
-    ) { projResult, activeSeqs, messages, lessons ->
-        RepoSnapshot(projResult, activeSeqs, messages, lessons)
+        lessonsStream,
+        userProfileStream
+    ) { projResult, activeSeqs, messages, lessons, profile ->
+        RepoSnapshot(projResult, activeSeqs, messages, lessons, profile)
     }
 
     val projectsUiState: StateFlow<UiState<StudioUiState>> = combine(
@@ -343,6 +378,7 @@ class StudioViewModel(
                 UiState.Success(
                     StudioUiState(
                         projects = enrichedProjects,
+                        userProfile = repoData.userProfile,
                         activeProject = activeProject,
                         activeSequence = activeSequence,
                         agentMessages = repoData.messages,
@@ -351,6 +387,7 @@ class StudioViewModel(
                         activeTab = sel.activeTab,
                         searchQuery = sel.searchQuery,
                         showDashboard = sel.showDashboard,
+                        showMetricsDashboard = sel.showMetricsDashboard,
                         showIngestSheet = sel.showIngestSheet,
                         activeIngestDraft = ingestDraft,
                         activeDirectorDraft = directorDraft,
@@ -365,6 +402,7 @@ class StudioViewModel(
                         latestAudioReport = banners.audioReport,
                         isAgentBusy = sel.busy.agent,
                         isFinalizing = sel.busy.finalizing,
+                        isSavingToDb = sel.busy.savingToDb,
                         isExporting = sel.busy.exporting,
                         generatingFrameId = banners.generatingFrameId,
                         statusBanner = banners.statusBanner,
@@ -405,10 +443,35 @@ class StudioViewModel(
 
     fun setShowDashboard(show: Boolean) {
         _showDashboard.value = show
+        if (show) {
+            _showMetricsDashboard.value = false
+        }
+    }
+
+    fun setShowMetricsDashboard(show: Boolean) {
+        _showMetricsDashboard.value = show
     }
 
     fun setShowIngestSheet(show: Boolean) {
         _showIngestSheet.value = show
+    }
+
+    fun updatePreferredStyle(style: String) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateUserPreferredStyle(currentUserId, style)
+                    .onSuccess {
+                        _statusBanner.value = "Perfil cinematográfico actualizado en la nube."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
     }
 
     fun selectProject(projectId: String) {
@@ -461,37 +524,42 @@ class StudioViewModel(
     ) {
         val draft = _directorDraftsBySeq.value[sequence.id] ?: defaultDirectorDraft(project, sequence)
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            if (draft.continuityBible != project.continuityBible) {
-                repository.updateProjectContinuity(currentUserId, project.id, draft.continuityBible)
-                    .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
-                        return@launch
-                    }
-            }
-            if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
-                val updatedSeq = sequence.copy(
-                    directorStyle = draft.directorStyle.trim().ifBlank { sequence.directorStyle },
-                    aspectRatio = draft.aspectRatio.trim().ifBlank { sequence.aspectRatio },
-                    cameraSystem = draft.cameraSystem.trim().ifBlank { sequence.cameraSystem },
-                    lensPackage = draft.lensPackage.trim().ifBlank { sequence.lensPackage },
-                    filmStockOrLut = draft.filmStockOrLut.trim().ifBlank { sequence.filmStockOrLut },
-                    lighting = sequence.lighting.copy(
-                        colorTemperatureKelvin = draft.colorTempKelvin.trim()
-                    ),
-                    directorVision = draft.directorVision.trim()
-                )
-                repository.updateDraftSequence(currentUserId, project.id, updatedSeq)
-                    .onSuccess {
-                        _directorDraftsBySeq.update { it - sequence.id }
-                        _statusBanner.value = "Ajustes de dirección guardados en «${sequence.title}»."
-                    }
-                    .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
-                    }
-            } else {
-                _directorDraftsBySeq.update { it - sequence.id }
-                _statusBanner.value = "Biblia de continuidad actualizada (la secuencia Final es inmutable)."
+            try {
+                if (draft.continuityBible != project.continuityBible) {
+                    repository.updateProjectContinuity(currentUserId, project.id, draft.continuityBible)
+                        .onFailure { err ->
+                            _errorBanner.value = friendlyFirestoreMessage(err)
+                            return@launch
+                        }
+                }
+                if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
+                    val updatedSeq = sequence.copy(
+                        directorStyle = draft.directorStyle.trim().ifBlank { sequence.directorStyle },
+                        aspectRatio = draft.aspectRatio.trim().ifBlank { sequence.aspectRatio },
+                        cameraSystem = draft.cameraSystem.trim().ifBlank { sequence.cameraSystem },
+                        lensPackage = draft.lensPackage.trim().ifBlank { sequence.lensPackage },
+                        filmStockOrLut = draft.filmStockOrLut.trim().ifBlank { sequence.filmStockOrLut },
+                        lighting = sequence.lighting.copy(
+                            colorTemperatureKelvin = draft.colorTempKelvin.trim()
+                        ),
+                        directorVision = draft.directorVision.trim()
+                    )
+                    repository.updateDraftSequence(currentUserId, project.id, updatedSeq)
+                        .onSuccess {
+                            _directorDraftsBySeq.update { it - sequence.id }
+                            _statusBanner.value = "Ajustes de dirección guardados en «${sequence.title}»."
+                        }
+                        .onFailure { err ->
+                            _errorBanner.value = friendlyFirestoreMessage(err)
+                        }
+                } else {
+                    _directorDraftsBySeq.update { it - sequence.id }
+                    _statusBanner.value = "Biblia de continuidad actualizada (la secuencia Final es inmutable)."
+                }
+            } finally {
+                _isSavingToDb.value = false
             }
         }
     }
@@ -524,54 +592,147 @@ class StudioViewModel(
         title: String,
         genreStyle: String,
         defaultSourceType: SourceMaterialType,
-        continuityBible: String
+        continuityBible: String,
+        templateId: String = "custom",
+        productionFolders: List<ProductionFolder> = ProjectTemplateCatalog.defaultFoldersFor(templateId)
     ) {
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            repository.createProject(currentUserId, title, genreStyle, defaultSourceType, continuityBible)
-                .onSuccess { newId ->
-                    _selectedProjectId.value = newId
-                    _selectedSequenceId.value = ""
-                    _activeTab.value = WorkspaceTab.AGENT
-                    _showDashboard.value = false
-                    _statusBanner.value = "Producción \"$title\" creada en el estudio."
+            try {
+                val resolvedFolders = productionFolders.ifEmpty {
+                    ProjectTemplateCatalog.defaultFoldersFor(templateId)
                 }
-                .onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
-                }
+                repository.createProject(
+                    userId = currentUserId,
+                    title = title,
+                    genreStyle = genreStyle,
+                    defaultSourceType = defaultSourceType,
+                    continuityBible = continuityBible,
+                    templateId = templateId,
+                    productionFolders = resolvedFolders
+                )
+                    .onSuccess { newId ->
+                        _selectedProjectId.value = newId
+                        _selectedSequenceId.value = ""
+                        _activeTab.value = WorkspaceTab.AGENT
+                        _showDashboard.value = false
+                        _showMetricsDashboard.value = false
+                        _statusBanner.value = "Producción \"$title\" creada con ${resolvedFolders.size} carpetas de producción."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
+    }
+
+    fun addProductionFolder(
+        project: ProductionProject,
+        folderName: String,
+        category: String,
+        description: String
+    ) {
+        val nextFolders = ProjectTemplateCatalog.addCustomFolder(
+            existing = project.productionFolders,
+            rawName = folderName,
+            category = category,
+            description = description
+        )
+        if (nextFolders.size == project.productionFolders.size) {
+            _errorBanner.value = "Ingresa un nombre válido (límite 20 carpetas por producción)."
+            return
+        }
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateProjectFolders(currentUserId, project.id, nextFolders)
+                    .onSuccess {
+                        _statusBanner.value = "Carpeta \"${nextFolders.last().name}\" añadida a la producción."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun updateProductionFolderNotes(
+        project: ProductionProject,
+        folderId: String,
+        notes: String
+    ) {
+        val nextFolders = ProjectTemplateCatalog.updateFolderNotes(
+            existing = project.productionFolders,
+            folderId = folderId,
+            notes = notes
+        )
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateProjectFolders(currentUserId, project.id, nextFolders)
+                    .onSuccess {
+                        _statusBanner.value = "Notas de carpeta sincronizadas."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun openProductionFolderTab(folder: ProductionFolder) {
+        _activeTab.value = ProjectTemplateCatalog.resolveWorkspaceTab(folder)
     }
 
     fun deleteProject(projectId: String) {
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            repository.deleteProject(currentUserId, projectId)
-                .onSuccess {
-                    _ingestDrafts.update { it - projectId }
-                    _agentFocusByProject.update { it - projectId }
-                    _agentDraftByProject.update { it - projectId }
-                    _statusBanner.value = "Producción eliminada."
-                }
-                .onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
-                }
+            try {
+                repository.deleteProject(currentUserId, projectId)
+                    .onSuccess {
+                        _ingestDrafts.update { it - projectId }
+                        _agentFocusByProject.update { it - projectId }
+                        _agentDraftByProject.update { it - projectId }
+                        _statusBanner.value = "Producción eliminada."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
     fun saveContinuityBible(projectId: String, bibleText: String) {
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            repository.updateProjectContinuity(currentUserId, projectId, bibleText)
-                .onSuccess {
-                    _ingestDrafts.update { map ->
-                        val existing = map[projectId]
-                        if (existing != null) map + (projectId to existing.copy(continuityBible = bibleText)) else map
+            try {
+                repository.updateProjectContinuity(currentUserId, projectId, bibleText)
+                    .onSuccess {
+                        _ingestDrafts.update { map ->
+                            val existing = map[projectId]
+                            if (existing != null) map + (projectId to existing.copy(continuityBible = bibleText)) else map
+                        }
+                        _statusBanner.value = "Biblia de continuidad actualizada."
                     }
-                    _statusBanner.value = "Biblia de continuidad actualizada."
-                }
-                .onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
-                }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
@@ -825,14 +986,19 @@ class StudioViewModel(
         }
         val updatedSequence = sequence.copy(screenplay = updatedList)
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            repository.updateDraftSequence(currentUserId, projectId, updatedSequence)
-                .onSuccess {
-                    _statusBanner.value = "Escena $targetNumber guardada en «${sequence.title}»."
-                }
-                .onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
-                }
+            try {
+                repository.updateDraftSequence(currentUserId, projectId, updatedSequence)
+                    .onSuccess {
+                        _statusBanner.value = "Escena $targetNumber guardada en «${sequence.title}»."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
@@ -930,19 +1096,24 @@ class StudioViewModel(
         note: String
     ) {
         viewModelScope.launch {
+            _isSavingToDb.value = true
             _errorBanner.value = null
-            repository.rateSequence(currentUserId, project.id, project.title, sequence, rating, note)
-                .onSuccess {
-                    _visionNotesBySeq.update { it + (sequence.id to "") }
-                    _statusBanner.value = if (rating >= 4) {
-                        "Valoración registrada en Studio Intelligence ($rating/5 ★)."
-                    } else {
-                        "Valoración guardada ($rating/5 ★)."
+            try {
+                repository.rateSequence(currentUserId, project.id, project.title, sequence, rating, note)
+                    .onSuccess {
+                        _visionNotesBySeq.update { it + (sequence.id to "") }
+                        _statusBanner.value = if (rating >= 4) {
+                            "Valoración registrada en Studio Intelligence ($rating/5 ★)."
+                        } else {
+                            "Valoración guardada ($rating/5 ★)."
+                        }
                     }
-                }
-                .onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
-                }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
@@ -1000,16 +1171,27 @@ class StudioViewModel(
             return
         }
         viewModelScope.launch {
-            repository.addLearningLesson(currentUserId, category, insight, rating, sourceProjectTitle)
-                .onSuccess { _statusBanner.value = "Regla guardada en memoria de autoaprendizaje." }
-                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.addLearningLesson(currentUserId, category, insight, rating, sourceProjectTitle)
+                    .onSuccess { _statusBanner.value = "Regla guardada en memoria de autoaprendizaje." }
+                    .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
     fun deleteLearningLesson(lessonId: String) {
         viewModelScope.launch {
-            repository.deleteLearningLesson(currentUserId, lessonId)
-                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+            _isSavingToDb.value = true
+            try {
+                repository.deleteLearningLesson(currentUserId, lessonId)
+                    .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+            } finally {
+                _isSavingToDb.value = false
+            }
         }
     }
 
@@ -1029,6 +1211,51 @@ class StudioViewModel(
                 throw e
             } catch (e: Exception) {
                 _errorBanner.value = e.localizedMessage ?: "No se pudo generar la Bitácora PDF."
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun exportScriptAndSchedulePdf(
+        context: Context,
+        project: ProductionProject,
+        sequence: ProductionSequence,
+        onReadyForDeviceSave: (File) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isExporting.value = true
+            _errorBanner.value = null
+            try {
+                val file = PdfExporter.exportScriptAndSchedulePdf(context, project, sequence)
+                onReadyForDeviceSave(file)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorBanner.value = e.localizedMessage ?: "No se pudo preparar el PDF de Guion y Plan."
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun savePdfToDeviceUri(
+        context: Context,
+        sourceFile: File,
+        destinationUri: Uri,
+        displayName: String = sourceFile.name
+    ) {
+        viewModelScope.launch {
+            _isExporting.value = true
+            _errorBanner.value = null
+            try {
+                PdfExporter.copyFileToUri(context, sourceFile, destinationUri)
+                    .onSuccess {
+                        _statusBanner.value = "PDF «$displayName» guardado en el almacenamiento del dispositivo."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = err.localizedMessage ?: "No se pudo guardar el PDF en la ubicación seleccionada."
+                    }
             } finally {
                 _isExporting.value = false
             }
@@ -1108,7 +1335,15 @@ class StudioViewModel(
         val audio: Boolean,
         val agent: Boolean,
         val finalizing: Boolean,
+        val savingToDb: Boolean,
         val exporting: Boolean
+    )
+
+    private data class ShellNavFlags(
+        val showDashboard: Boolean,
+        val showMetricsDashboard: Boolean,
+        val showIngestSheet: Boolean,
+        val busy: BusyState
     )
 
     private data class SelectionState(
@@ -1117,6 +1352,7 @@ class StudioViewModel(
         val activeTab: WorkspaceTab,
         val searchQuery: String,
         val showDashboard: Boolean,
+        val showMetricsDashboard: Boolean,
         val showIngestSheet: Boolean,
         val busy: BusyState
     )
@@ -1133,7 +1369,8 @@ class StudioViewModel(
         val projectsResult: UiState<List<ProductionProject>>,
         val activeSeqs: List<ProductionSequence>,
         val messages: List<AgentMessage>,
-        val lessons: List<LearningLesson>
+        val lessons: List<LearningLesson>,
+        val userProfile: UserProfileState?
     )
 
     private data class TabDraftsSnapshot(

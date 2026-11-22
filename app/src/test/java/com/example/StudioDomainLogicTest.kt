@@ -12,11 +12,15 @@ import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.ShotSpec
 import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
+import androidx.test.core.app.ApplicationProvider
 import com.example.data.util.AgentLogic
 import com.example.data.util.LearningEngine
+import com.example.data.util.PdfExporter
 import com.example.data.util.ProductionProgress
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.StudioLogic
+import com.example.data.util.StudioMetricsCalculator
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
@@ -25,7 +29,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class StudioDomainLogicTest {
 
     private fun sampleProject(): ProductionProject {
@@ -204,5 +213,99 @@ class StudioDomainLogicTest {
         assertEquals(1, report.finalizedSequencesCount)
         assertTrue(report.totalTrackedOutcomes >= 1)
         assertEquals(AgentRoleFocus.COUNCIL, AgentRoleFocus.fromWire("unknown"))
+    }
+
+    @Test
+    fun `production schedule, voice transcript formatting, and metrics calculator work accurately`() {
+        val proj1 = sampleProject()
+        val seqFinal = proj1.sequences.first().copy(
+            id = "seq_2",
+            title = "Clímax del Faro",
+            versionStatus = SequenceVersionStatus.FINAL,
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_086_400_000L
+        )
+        val proj2 = proj1.copy(
+            id = "proj_2",
+            title = "Marea Roja",
+            sequences = listOf(seqFinal),
+            sequencesCount = 1,
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_172_800_000L
+        )
+
+        val schedule = StudioLogic.buildProductionSchedule(seqFinal)
+        assertEquals(1, schedule.size)
+        assertTrue(schedule.first().estimatedMinutes >= 15)
+        assertTrue(schedule.first().cameraAndLens.contains("RED V-Raptor"))
+
+        val firstAppend = StudioLogic.appendDictatedTranscript("", "la cámara avanza lento por el pasillo")
+        assertEquals("La cámara avanza lento por el pasillo.", firstAppend)
+        val secondAppend = StudioLogic.appendDictatedTranscript(firstAppend, "un relámpago ilumina la ventana.")
+        assertEquals("La cámara avanza lento por el pasillo.\nUn relámpago ilumina la ventana.", secondAppend)
+
+        val metrics = StudioMetricsCalculator.computeMetrics(listOf(proj1, proj2))
+        assertEquals(2, metrics.totalProjects)
+        assertEquals(2, metrics.totalSequences)
+        assertEquals(1, metrics.draftSequences)
+        assertEquals(1, metrics.finalSequences)
+        assertEquals(2, metrics.totalScenes)
+        assertEquals(4, metrics.totalBeats)
+        assertTrue(metrics.totalScriptWords > 10)
+        assertEquals(2, metrics.projectBars.size)
+        assertEquals(2, metrics.scriptLengthBySequence.size)
+        assertTrue(metrics.activityTimeline.isNotEmpty())
+    }
+
+    @Test
+    fun `copyFileToUri writes exported bytes to destination device storage Uri cleanly`() {
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val source = PdfExporter.saveTextExport(context, "guion_plan_test.txt", "GUION Y PLAN DE RODAJE")
+            val dest = java.io.File(context.cacheDir, "device_saved_copy.pdf")
+            dest.delete()
+            val result = PdfExporter.copyFileToUri(context, source, android.net.Uri.fromFile(dest))
+            assertTrue(result.isSuccess)
+            assertTrue(dest.exists())
+            assertEquals("GUION Y PLAN DE RODAJE", dest.readText())
+            source.delete()
+            dest.delete()
+        }
+    }
+
+    @Test
+    fun `cinematic project template library provides folders and supports custom folders and notes`() {
+        val all = ProjectTemplateCatalog.ALL_TEMPLATES
+        assertTrue(all.any { it.id == "short_film" })
+        assertTrue(all.any { it.id == "documentary" })
+        assertTrue(all.any { it.id == "feature_script" })
+        assertTrue(all.any { it.id == "series_pilot" })
+        assertTrue(all.any { it.id == "commercial_mv" })
+        assertTrue(all.all { it.folders.size >= 3 })
+
+        val docFolders = ProjectTemplateCatalog.defaultFoldersFor("documentary")
+        assertEquals(5, docFolders.size)
+        assertEquals(SourceMaterialType.AUDIOBOOK, ProjectTemplateCatalog.findById("documentary").defaultSourceType)
+
+        val featureFolders = ProjectTemplateCatalog.defaultFoldersFor("feature_script")
+        assertEquals(6, featureFolders.size)
+        assertTrue(featureFolders.any { it.name.contains("VFX") })
+
+        val withCustom = ProjectTemplateCatalog.addCustomFolder(
+            existing = docFolders,
+            rawName = "Archivo_Prensa",
+            category = "visual",
+            description = "Recortes históricos"
+        )
+        assertEquals(6, withCustom.size)
+        assertEquals("06_Archivo_Prensa", withCustom.last().name)
+        assertEquals(com.example.data.model.WorkspaceTab.STORYBOARD, ProjectTemplateCatalog.resolveWorkspaceTab(withCustom.last()))
+
+        val updated = ProjectTemplateCatalog.updateFolderNotes(
+            existing = withCustom,
+            folderId = docFolders.first().id,
+            notes = "Confirmar entrevistas del lunes"
+        )
+        assertEquals("Confirmar entrevistas del lunes", updated.first().notes)
     }
 }

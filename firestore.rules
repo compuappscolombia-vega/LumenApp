@@ -48,7 +48,8 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'ownerId', 'title', 'genreStyle', 'defaultSourceType',
-          'continuityBible', 'sequencesCount', 'assetsCount', 'createdAt', 'updatedAt'
+          'continuityBible', 'templateId', 'productionFolders',
+          'sequencesCount', 'assetsCount', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.ownerId == request.auth.uid
@@ -56,6 +57,12 @@ service cloud.firestore {
         && data.genreStyle is string && data.genreStyle.size() <= 180
         && data.defaultSourceType in ['book', 'audiobook', 'story']
         && data.continuityBible is string && data.continuityBible.size() <= 20000
+        && (!('templateId' in data) || (data.templateId is string && data.templateId.size() <= 64))
+        && (!('productionFolders' in data) || (
+          data.productionFolders is list
+          && data.productionFolders.size() <= 20
+          && (data.productionFolders.size() == 0 || data.productionFolders[0] is map)
+        ))
         && data.sequencesCount is int && data.sequencesCount >= 0 && data.sequencesCount <= 1000
         && data.assetsCount is int && data.assetsCount >= 0 && data.assetsCount <= 5000
         && data.createdAt is timestamp && data.createdAt <= request.time
@@ -154,6 +161,7 @@ service cloud.firestore {
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'genreStyle', 'continuityBible', 'updatedAt'])
             || incoming().diff(existing()).affectedKeys().hasOnly(['sequencesCount', 'assetsCount', 'continuityBible', 'updatedAt'])
             || incoming().diff(existing()).affectedKeys().hasOnly(['continuityBible', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['productionFolders', 'updatedAt'])
           );
         allow delete: if isValidId(userId) && isValidId(projectId) && isOwner(userId);
 

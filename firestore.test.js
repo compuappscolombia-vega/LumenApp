@@ -99,6 +99,51 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
       genreStyle: "Thriller Psicológico Neo-Noir",
       defaultSourceType: "book",
       continuityBible: "Regla 1: lluvia constante.",
+      templateId: "feature_script",
+      productionFolders: [
+        {
+          id: "ft_script",
+          name: "01_Guion_Tecnico_Actos_I_III",
+          category: "script",
+          description: "Guion maestro",
+          notes: "",
+          targetTab: "screenplay",
+        },
+      ],
+      sequencesCount: 0,
+      assetsCount: 0,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  // Update productionFolders on owned project
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_1").update({
+      productionFolders: [
+        {
+          id: "ft_script",
+          name: "01_Guion_Tecnico_Actos_I_III",
+          category: "script",
+          description: "Guion maestro",
+          notes: "Revisar Acto II",
+          targetTab: "screenplay",
+        },
+      ],
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Reject >20 productionFolders
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_overflow").set({
+      ownerId: ALICE_UID,
+      title: "Too Many Folders",
+      genreStyle: "IMAX",
+      defaultSourceType: "book",
+      continuityBible: "",
+      templateId: "custom",
+      productionFolders: Array.from({ length: 21 }, (_, idx) => ({ id: `f_${idx}`, name: `Folder ${idx}` })),
       sequencesCount: 0,
       assetsCount: 0,
       createdAt: past,

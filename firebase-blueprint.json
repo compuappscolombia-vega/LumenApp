@@ -63,6 +63,14 @@
           "type": "string",
           "description": "Biblia de continuidad acumulada (<=20000 caracteres)."
         },
+        "templateId": {
+          "type": "string",
+          "description": "Identificador de plantilla cinematográfica inicial (<=64 caracteres)."
+        },
+        "productionFolders": {
+          "type": "array",
+          "description": "Carpetas de producción inicializadas automáticamente según la plantilla elegida (<=20)."
+        },
         "sequencesCount": {
           "type": "integer",
           "description": "Cantidad de secuencias (0..1000)."

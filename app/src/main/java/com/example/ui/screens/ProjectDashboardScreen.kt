@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -33,7 +37,9 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -67,9 +73,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +87,7 @@ import com.example.R
 import com.example.data.model.ProductionProject
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.SourceMaterialType
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
@@ -109,6 +119,7 @@ fun ProjectDashboardScreen(
     onDeleteProject: (String) -> Unit,
     onOpenLearning: () -> Unit,
     onOpenBlueprint: () -> Unit,
+    onOpenMetrics: () -> Unit = {},
     onExportManualPdf: () -> Unit,
     onExportLibraryPdf: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -148,20 +159,16 @@ fun ProjectDashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Surface(
-                            color = AmberGold,
-                            shape = RoundedCornerShape(9.dp),
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Movie,
-                                    contentDescription = null,
-                                    tint = ObsidianBg,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.img_lumenreel_logo),
+                            contentDescription = "Logo LumenReel",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(1.dp, AmberGold.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                                .testTag("dashboard_header_logo")
+                        )
                         Column {
                             Text(
                                 text = stringResource(R.string.dashboard_title),
@@ -181,6 +188,18 @@ fun ProjectDashboardScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onOpenMetrics,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("dashboard_open_metrics_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Insights,
+                            contentDescription = "Abrir analítica del estudio",
+                            tint = AmberGold
+                        )
+                    }
                     IconButton(
                         onClick = onOpenAccount,
                         modifier = Modifier
@@ -210,6 +229,14 @@ fun ProjectDashboardScreen(
                             expanded = overflowExpanded,
                             onDismissRequest = { overflowExpanded = false }
                         ) {
+                            DropdownMenuItem(
+                                leadingIcon = { Icon(Icons.Rounded.Insights, contentDescription = null) },
+                                text = { Text("Analítica del estudio") },
+                                onClick = {
+                                    overflowExpanded = false
+                                    onOpenMetrics()
+                                }
+                            )
                             DropdownMenuItem(
                                 leadingIcon = { Icon(Icons.Rounded.Psychology, contentDescription = null) },
                                 text = { Text(stringResource(R.string.action_learning)) },
@@ -285,13 +312,7 @@ fun ProjectDashboardScreen(
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val isWide = maxWidth >= 720.dp
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Studio Overview Telemetry Banner
+                val telemetryHeader: @Composable () -> Unit = {
                     Surface(
                         color = StudioCard,
                         shape = RoundedCornerShape(14.dp),
@@ -310,16 +331,20 @@ fun ProjectDashboardScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Director: ${currentUser?.displayName ?: "Estudio Local (Sin sesión)"}",
+                                        text = "Director: ${currentUser?.displayName ?: "Cuenta LumenReel"}",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = IvoryPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = stringResource(R.string.dashboard_subtitle),
+                                        text = currentUser?.email?.takeIf { it.isNotBlank() }
+                                            ?.let { "$it · Perfil privado en Cloud Firestore" }
+                                            ?: stringResource(R.string.dashboard_subtitle),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MutedStone
+                                        color = MutedStone,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -349,66 +374,77 @@ fun ProjectDashboardScreen(
                             }
                         }
                     }
+                }
 
-                    // Search & Source Filter Row
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = onSearchChange,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.search_projects_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MutedStone
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Search, contentDescription = null, tint = MutedStone)
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AmberGold,
-                            unfocusedBorderColor = StudioBorder,
-                            focusedContainerColor = StudioCard,
-                            unfocusedContainerColor = StudioCard,
-                            focusedTextColor = IvoryPrimary,
-                            unfocusedTextColor = IvoryPrimary
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("dashboard_search_input")
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        DashboardFilterChip(
-                            label = "Todas",
-                            selected = selectedSourceFilter == null,
-                            onClick = { selectedSourceFilter = null },
-                            tag = "dashboard_filter_all"
+                val filterBar: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchChange,
+                            placeholder = {
+                                Text(
+                                    text = stringResource(R.string.search_projects_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MutedStone
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Search, contentDescription = null, tint = MutedStone)
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AmberGold,
+                                unfocusedBorderColor = StudioBorder,
+                                focusedContainerColor = StudioCard,
+                                unfocusedContainerColor = StudioCard,
+                                focusedTextColor = IvoryPrimary,
+                                unfocusedTextColor = IvoryPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_search_input")
                         )
-                        SourceMaterialType.entries.forEach { source ->
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             DashboardFilterChip(
-                                label = when (source) {
-                                    SourceMaterialType.BOOK -> "Libro"
-                                    SourceMaterialType.AUDIOBOOK -> "Audiolibro"
-                                    SourceMaterialType.STORY -> "Historia"
-                                },
-                                selected = selectedSourceFilter == source,
-                                onClick = {
-                                    selectedSourceFilter = if (selectedSourceFilter == source) null else source
-                                },
-                                tag = "dashboard_filter_${source.wireValue}"
+                                label = "Todas",
+                                selected = selectedSourceFilter == null,
+                                onClick = { selectedSourceFilter = null },
+                                tag = "dashboard_filter_all"
                             )
+                            SourceMaterialType.entries.forEach { source ->
+                                DashboardFilterChip(
+                                    label = when (source) {
+                                        SourceMaterialType.BOOK -> "Libro"
+                                        SourceMaterialType.AUDIOBOOK -> "Audiolibro"
+                                        SourceMaterialType.STORY -> "Historia"
+                                    },
+                                    selected = selectedSourceFilter == source,
+                                    onClick = {
+                                        selectedSourceFilter = if (selectedSourceFilter == source) null else source
+                                    },
+                                    tag = "dashboard_filter_${source.wireValue}"
+                                )
+                            }
                         }
                     }
+                }
 
-                    // Active Projects List / Grid or Empty State
-                    if (filteredProjects.isEmpty()) {
+                if (filteredProjects.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        telemetryHeader()
+                        filterBar()
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -475,41 +511,45 @@ fun ProjectDashboardScreen(
                                 }
                             }
                         }
-                    } else if (isWide) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(bottom = 88.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(filteredProjects, key = { it.id }) { proj ->
-                                ProjectDashboardCard(
-                                    project = proj,
-                                    isSelected = proj.id == activeProjectId,
-                                    onSelect = { onSelectProject(proj) },
-                                    onRequestDelete = { projectPendingDelete = proj }
-                                )
-                            }
+                    }
+                } else if (isWide) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("dashboard_projects_list"),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 88.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item(span = { GridItemSpan(maxLineSpan) }) { telemetryHeader() }
+                        item(span = { GridItemSpan(maxLineSpan) }) { filterBar() }
+                        items(filteredProjects, key = { it.id }) { proj ->
+                            ProjectDashboardCard(
+                                project = proj,
+                                isSelected = proj.id == activeProjectId,
+                                onSelect = { onSelectProject(proj) },
+                                onRequestDelete = { projectPendingDelete = proj }
+                            )
                         }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(bottom = 88.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(filteredProjects, key = { it.id }) { proj ->
-                                ProjectDashboardCard(
-                                    project = proj,
-                                    isSelected = proj.id == activeProjectId,
-                                    onSelect = { onSelectProject(proj) },
-                                    onRequestDelete = { projectPendingDelete = proj }
-                                )
-                            }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("dashboard_projects_list"),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        item(key = "telemetry_header") { telemetryHeader() }
+                        item(key = "filter_bar") { filterBar() }
+                        items(filteredProjects, key = { it.id }) { proj ->
+                            ProjectDashboardCard(
+                                project = proj,
+                                isSelected = proj.id == activeProjectId,
+                                onSelect = { onSelectProject(proj) },
+                                onRequestDelete = { projectPendingDelete = proj }
+                            )
                         }
                     }
                 }
@@ -548,6 +588,7 @@ fun ProjectDashboardScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProjectDashboardCard(
     project: ProductionProject,
@@ -561,6 +602,13 @@ private fun ProjectDashboardCard(
     val displayedSeqCount = maxOf(project.sequencesCount, stats.sequenceCount)
     val finalsCount = remember(project.sequences) {
         project.sequences.count { it.versionStatus == SequenceVersionStatus.FINAL }
+    }
+
+    val templateMeta = remember(project.templateId) {
+        ProjectTemplateCatalog.findById(project.templateId)
+    }
+    val folders = remember(project.productionFolders, project.templateId) {
+        project.productionFolders.ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(project.templateId) }
     }
 
     Surface(
@@ -589,9 +637,9 @@ private fun ProjectDashboardCard(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Surface(
                             color = TealContainer,
@@ -602,6 +650,20 @@ private fun ProjectDashboardCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TealAtmos,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                        Surface(
+                            color = StudioDeepPanel,
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(6.dp))
+                        ) {
+                            Text(
+                                text = "${templateMeta.name} · ${folders.size} carpetas",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = WarmSilver,
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    .testTag("project_folders_badge_${project.id}")
                             )
                         }
                         if (isSelected) {
@@ -666,6 +728,42 @@ private fun ProjectDashboardCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (folders.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    folders.forEach { folder ->
+                        Surface(
+                            color = StudioDeepPanel,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Folder,
+                                    contentDescription = null,
+                                    tint = AmberGold,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = folder.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = WarmSilver,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Surface(

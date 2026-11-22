@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,10 +34,13 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
@@ -84,9 +90,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,17 +103,22 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
+import com.example.data.model.ProductionFolder
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.WorkspaceTab
 import com.example.data.repository.LOCAL_GUEST_UID
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.components.AccountDialog
+import com.example.ui.components.AddProductionFolderDialog
 import com.example.ui.components.AgentBlueprintDialog
 import com.example.ui.components.LearningMemoryDialog
 import com.example.ui.components.NewProjectDialog
+import com.example.ui.components.ProductionFolderDetailDialog
 import com.example.ui.components.SourceIngestModalSheet
+import com.example.ui.components.StudioLoadingOverlay
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.ErrorContainerDark
@@ -225,35 +239,80 @@ private fun StudioWorkspaceShell(
     var showLearningDialog by remember { mutableStateOf(false) }
     var showBlueprintDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var selectedFolderForDetail by remember { mutableStateOf<ProductionFolder?>(null) }
+    var showAddFolderDialog by remember { mutableStateOf(false) }
     var overflowExpanded by remember { mutableStateOf(false) }
     var sequenceMenuExpanded by remember { mutableStateOf(false) }
+    var pendingDevicePdfFile by remember { mutableStateOf<File?>(null) }
 
-    if (ui.showDashboard) {
-        ProjectDashboardScreen(
-            currentUser = currentUser,
-            projects = ui.projects,
-            activeProjectId = ui.activeProject?.id.orEmpty(),
-            searchQuery = ui.searchQuery,
-            statusBanner = ui.statusBanner,
-            errorBanner = ui.errorBanner,
-            onSearchChange = vm::updateSearchQuery,
-            onSelectProject = { proj ->
-                vm.selectProject(proj.id)
-                vm.setShowDashboard(false)
-            },
-            onCreateProjectClick = { showNewProjectDialog = true },
-            onDeleteProject = vm::deleteProject,
-            onOpenLearning = { showLearningDialog = true },
-            onOpenBlueprint = { showBlueprintDialog = true },
-            onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
-            onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
-            onOpenAccount = { showAccountDialog = true },
-            onDismissBanner = vm::clearBanners
-        )
-    } else {
-        BackHandler {
-            vm.setShowDashboard(true)
+    val savePdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { destUri ->
+        val file = pendingDevicePdfFile
+        pendingDevicePdfFile = null
+        if (destUri != null && file != null) {
+            vm.savePdfToDeviceUri(context, file, destUri, file.name)
         }
+    }
+
+    val requestSaveScriptAndSchedulePdf: (ProductionProject, ProductionSequence) -> Unit = { proj, seq ->
+        vm.exportScriptAndSchedulePdf(context, proj, seq) { generatedFile ->
+            pendingDevicePdfFile = generatedFile
+            savePdfLauncher.launch(generatedFile.name)
+        }
+    }
+
+    val showGlobalLoader = ui.isProducing ||
+        ui.isAnalyzingAudio ||
+        ui.isAgentBusy ||
+        ui.isFinalizing ||
+        ui.isSavingToDb ||
+        ui.isExporting ||
+        ui.generatingFrameId != null
+
+    val (loaderHeadline, loaderSubtitle) = when {
+        ui.isProducing -> "Generando secuencia con Gemini…" to "Estructurando guion técnico, plano 3D, VFX y guardando en Firestore."
+        ui.isAnalyzingAudio -> "Analizando audio con Gemini…" to "Extrayendo transcripción verbatim, ritmo y diseño sonoro."
+        ui.isAgentBusy -> "Consultando al Agente Tripartito…" to "Aplicando ajustes creativos y sincronizando tu expediente."
+        ui.generatingFrameId != null -> "Renderizando fotograma Nano…" to "Creando concepto visual cinematográfico para el storyboard."
+        ui.isFinalizing -> "Sellando Versión Final…" to "Guardando versión definitiva y extrayendo aprendizajes en Firestore."
+        ui.isExporting -> "Preparando documento PDF…" to "Compilando guion y plan de rodaje para guardar en tu dispositivo."
+        else -> "Guardando en Firestore…" to "Sincronizando cambios de forma privada con tu perfil de Google."
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (ui.showMetricsDashboard) {
+            MetricsDashboardScreen(
+                projects = ui.projects,
+                onBack = { vm.setShowMetricsDashboard(false) }
+            )
+        } else if (ui.showDashboard) {
+            ProjectDashboardScreen(
+                currentUser = currentUser,
+                projects = ui.projects,
+                activeProjectId = ui.activeProject?.id.orEmpty(),
+                searchQuery = ui.searchQuery,
+                statusBanner = ui.statusBanner,
+                errorBanner = ui.errorBanner,
+                onSearchChange = vm::updateSearchQuery,
+                onSelectProject = { proj ->
+                    vm.selectProject(proj.id)
+                    vm.setShowDashboard(false)
+                },
+                onCreateProjectClick = { showNewProjectDialog = true },
+                onDeleteProject = vm::deleteProject,
+                onOpenLearning = { showLearningDialog = true },
+                onOpenBlueprint = { showBlueprintDialog = true },
+                onOpenMetrics = { vm.setShowMetricsDashboard(true) },
+                onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
+                onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
+                onOpenAccount = { showAccountDialog = true },
+                onDismissBanner = vm::clearBanners
+            )
+        } else {
+            BackHandler {
+                vm.setShowDashboard(true)
+            }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ObsidianBg)) {
             val isWideTablet = maxWidth >= 840.dp
@@ -278,6 +337,14 @@ private fun StudioWorkspaceShell(
                         if (!isWideTablet) scope.launch { drawerState.close() }
                     },
                     onDeleteProject = vm::deleteProject,
+                    onOpenFolderDetail = { folder ->
+                        selectedFolderForDetail = folder
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    },
+                    onAddFolderClick = {
+                        showAddFolderDialog = true
+                        if (!isWideTablet) scope.launch { drawerState.close() }
+                    },
                     onCreateProjectClick = {
                         showNewProjectDialog = true
                         if (!isWideTablet) scope.launch { drawerState.close() }
@@ -418,6 +485,15 @@ private fun StudioWorkspaceShell(
                                     onDismissRequest = { overflowExpanded = false }
                                 ) {
                                     DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Rounded.Insights, contentDescription = null) },
+                                        text = { Text("Analítica del estudio") },
+                                        onClick = {
+                                            overflowExpanded = false
+                                            vm.setShowMetricsDashboard(true)
+                                        },
+                                        modifier = Modifier.testTag("studio_open_metrics_menu_item")
+                                    )
+                                    DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.Psychology, contentDescription = null) },
                                         text = { Text(stringResource(R.string.action_learning)) },
                                         onClick = {
@@ -451,7 +527,7 @@ private fun StudioWorkspaceShell(
                                     )
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
-                                        text = { Text(currentUser?.displayName ?: "Estudio Local") },
+                                        text = { Text(currentUser?.displayName ?: "Perfil Google") },
                                         onClick = {
                                             overflowExpanded = false
                                             showAccountDialog = true
@@ -625,8 +701,10 @@ private fun StudioWorkspaceShell(
                                     sequence = activeSequence,
                                     selectedShotIndex = ui.activeSelectedShotIndex,
                                     use3DStage = ui.activeStage3DMode,
+                                    isExporting = ui.isExporting,
                                     onSelectShot = { idx -> vm.updateSelectedShotIndex(activeSequence.id, idx) },
-                                    onToggle3DStage = { use3d -> vm.updateStage3DMode(activeSequence.id, use3d) }
+                                    onToggle3DStage = { use3d -> vm.updateStage3DMode(activeSequence.id, use3d) },
+                                    onSaveSchedulePdf = { requestSaveScriptAndSchedulePdf(activeProject, activeSequence) }
                                 )
                                 WorkspaceTab.SCREENPLAY -> ScreenplayTabView(
                                     sequence = activeSequence,
@@ -646,6 +724,7 @@ private fun StudioWorkspaceShell(
                                         )
                                     },
                                     onExportPdf = { vm.exportSequencePdf(context, activeProject, activeSequence, onShareFile) },
+                                    onSaveScriptSchedulePdf = { requestSaveScriptAndSchedulePdf(activeProject, activeSequence) },
                                     onExportMarkdown = {
                                         vm.exportScreenplayText(context, activeProject.title, activeSequence, fountain = false, onReadyToShare = onShareFile)
                                     },
@@ -746,9 +825,32 @@ private fun StudioWorkspaceShell(
     if (showNewProjectDialog) {
         NewProjectDialog(
             onDismiss = { showNewProjectDialog = false },
-            onCreate = { title, genreStyle, sourceType, bible ->
-                vm.createProject(title, genreStyle, sourceType, bible)
+            onCreate = { title, genreStyle, sourceType, bible, templateId, folders ->
+                vm.createProject(title, genreStyle, sourceType, bible, templateId, folders)
                 vm.setShowDashboard(false)
+            }
+        )
+    }
+
+    val activeProjectForFolders = ui.activeProject
+    if (selectedFolderForDetail != null && activeProjectForFolders != null) {
+        ProductionFolderDetailDialog(
+            folder = selectedFolderForDetail!!,
+            onDismiss = { selectedFolderForDetail = null },
+            onSaveNotes = { notes ->
+                vm.updateProductionFolderNotes(activeProjectForFolders, selectedFolderForDetail!!.id, notes)
+            },
+            onOpenWorkspaceTab = {
+                vm.openProductionFolderTab(selectedFolderForDetail!!)
+            }
+        )
+    }
+
+    if (showAddFolderDialog && activeProjectForFolders != null) {
+        AddProductionFolderDialog(
+            onDismiss = { showAddFolderDialog = false },
+            onAddFolder = { name, category, desc ->
+                vm.addProductionFolder(activeProjectForFolders, name, category, desc)
             }
         )
     }
@@ -770,11 +872,20 @@ private fun StudioWorkspaceShell(
     if (showAccountDialog) {
         AccountDialog(
             user = currentUser,
+            preferredStyle = ui.userProfile?.preferredStyle.orEmpty(),
+            onSavePreferredStyle = vm::updatePreferredStyle,
             authStatusMessage = authStatusMessage,
             onClearAuthStatus = onClearAuthStatus,
             onOptionalGoogleSignIn = onOptionalGoogleSignIn,
             onDismiss = { showAccountDialog = false },
             onSignOut = onSignOut
+        )
+    }
+
+        StudioLoadingOverlay(
+            visible = showGlobalLoader,
+            headline = loaderHeadline,
+            subtitle = loaderSubtitle
         )
     }
 }
@@ -790,6 +901,8 @@ private fun StudioDrawerContent(
     onSelectProject: (String) -> Unit,
     onSelectSequence: (String) -> Unit,
     onDeleteProject: (String) -> Unit,
+    onOpenFolderDetail: (ProductionFolder) -> Unit,
+    onAddFolderClick: () -> Unit,
     onCreateProjectClick: () -> Unit
 ) {
     val filtered = remember(projects, searchQuery) {
@@ -811,7 +924,15 @@ private fun StudioDrawerContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.Movie, contentDescription = null, tint = AmberGold)
+                Image(
+                    painter = painterResource(id = R.drawable.img_lumenreel_logo),
+                    contentDescription = "Logo LumenReel",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .border(1.dp, AmberGold.copy(alpha = 0.65f), RoundedCornerShape(7.dp))
+                )
                 Text(stringResource(R.string.studio_brand_title), style = MaterialTheme.typography.titleMedium, color = IvoryPrimary)
             }
             IconButton(
@@ -860,6 +981,12 @@ private fun StudioDrawerContent(
         ) {
             items(filtered, key = { it.id }) { proj ->
                 val isSelected = proj.id == activeProjectId
+                val folders = remember(proj.productionFolders, proj.templateId) {
+                    proj.productionFolders.ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(proj.templateId) }
+                }
+                val templateMeta = remember(proj.templateId) {
+                    ProjectTemplateCatalog.findById(proj.templateId)
+                }
                 Surface(
                     color = if (isSelected) AmberContainer else StudioDeepPanel,
                     shape = RoundedCornerShape(12.dp),
@@ -890,12 +1017,89 @@ private fun StudioDrawerContent(
                                 Icon(Icons.Rounded.DeleteOutline, contentDescription = "Eliminar producción", tint = MutedStone, modifier = Modifier.size(16.dp))
                             }
                         }
-                        Text(proj.genreStyle, style = MaterialTheme.typography.labelSmall, color = MutedStone, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = "${templateMeta.name} · ${proj.genreStyle}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MutedStone,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (isSelected) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .testTag("drawer_production_folders"),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Carpetas de producción (${folders.size})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TealAtmos,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    IconButton(
+                                        onClick = onAddFolderClick,
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .testTag("drawer_add_folder_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.CreateNewFolder,
+                                            contentDescription = "Añadir carpeta",
+                                            tint = AmberGold,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                folders.forEach { folder ->
+                                    Surface(
+                                        color = StudioCard,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onOpenFolderDetail(folder) }
+                                            .testTag("drawer_folder_${folder.id}")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Folder,
+                                                contentDescription = null,
+                                                tint = AmberGold,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                            Text(
+                                                text = folder.name,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = IvoryPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if (isSelected && proj.sequences.isNotEmpty()) {
                             Column(
                                 modifier = Modifier.padding(top = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
+                                Text(
+                                    text = "Secuencias (${proj.sequences.size})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = WarmSilver,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 proj.sequences.forEach { seq ->
                                     val seqActive = seq.id == activeSequenceId
                                     Surface(

@@ -6,18 +6,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CropFree
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.ViewInAr
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -42,8 +48,10 @@ import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.IvoryPrimary
 import com.example.ui.theme.MutedStone
+import com.example.ui.theme.ObsidianBg
 import com.example.ui.theme.StudioBorder
 import com.example.ui.theme.StudioDeepPanel
+import com.example.ui.theme.StudioSurfaceElevated
 import com.example.ui.theme.TealAtmos
 import com.example.ui.theme.TealContainer
 import com.example.ui.theme.WarmSilver
@@ -53,8 +61,10 @@ fun ShotsAndSoundTabView(
     sequence: ProductionSequence,
     selectedShotIndex: Int,
     use3DStage: Boolean,
+    isExporting: Boolean = false,
     onSelectShot: (Int) -> Unit,
     onToggle3DStage: (Boolean) -> Unit,
+    onSaveSchedulePdf: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var fullscreen3DOpen by remember { mutableStateOf(false) }
@@ -123,6 +133,32 @@ fun ShotsAndSoundTabView(
                 OpticalViewfinderCanvas(
                     aspectRatioStr = sequence.aspectRatio,
                     activeShot = activeShot
+                )
+            }
+        }
+
+        item {
+            Button(
+                onClick = onSaveSchedulePdf,
+                enabled = !isExporting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TealAtmos,
+                    contentColor = ObsidianBg,
+                    disabledContainerColor = StudioSurfaceElevated,
+                    disabledContentColor = MutedStone
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("shots_save_schedule_pdf_button")
+            ) {
+                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    text = "Guardar Plan de Rodaje y Guion (PDF)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

@@ -13,6 +13,7 @@ class StudioSessionStateHolder {
     val activeTab = MutableStateFlow(WorkspaceTab.AGENT)
     val searchQuery = MutableStateFlow("")
     val showDashboard = MutableStateFlow(true)
+    val showMetricsDashboard = MutableStateFlow(false)
     val showIngestSheet = MutableStateFlow(false)
 
     val sequencesByProject = MutableStateFlow<Map<String, List<ProductionSequence>>>(emptyMap())
@@ -32,6 +33,7 @@ class StudioSessionStateHolder {
         activeTab.value = WorkspaceTab.AGENT
         searchQuery.value = ""
         showDashboard.value = true
+        showMetricsDashboard.value = false
         showIngestSheet.value = false
         sequencesByProject.value = emptyMap()
         ingestDrafts.value = emptyMap()

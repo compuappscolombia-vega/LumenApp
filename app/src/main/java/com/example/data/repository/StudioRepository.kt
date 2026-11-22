@@ -12,6 +12,7 @@ import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.LearningLessonDoc
 import com.example.data.model.LightingSetup
+import com.example.data.model.ProductionFolder
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
@@ -24,6 +25,7 @@ import com.example.data.model.StudioProjectDoc
 import com.example.data.model.VfxBreakdown
 import com.example.data.util.LearningEngine
 import com.example.data.util.OperationType
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.handleFirestoreError
 import com.google.firebase.Firebase
@@ -131,6 +133,10 @@ class StudioRepository(
                         StudioProjectDoc::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                     ) ?: return@mapNotNull null
+                    val safeTemplateId = dto.templateId.ifBlank { "custom" }
+                    val resolvedFolders = dto.productionFolders
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: ProjectTemplateCatalog.defaultFoldersFor(safeTemplateId)
                     ProductionProject(
                         id = dto.id,
                         ownerId = dto.ownerId,
@@ -138,6 +144,8 @@ class StudioRepository(
                         genreStyle = dto.genreStyle,
                         defaultSourceType = SourceMaterialType.fromWire(dto.defaultSourceType),
                         continuityBible = dto.continuityBible,
+                        templateId = safeTemplateId,
+                        productionFolders = resolvedFolders,
                         sequencesCount = dto.sequencesCount.toInt(),
                         assetsCount = dto.assetsCount.toInt(),
                         createdAtMillis = (dto.createdAt ?: Timestamp.now()).toDate().time,
@@ -415,10 +423,24 @@ class StudioRepository(
         title: String,
         genreStyle: String,
         defaultSourceType: SourceMaterialType,
-        continuityBible: String
+        continuityBible: String,
+        templateId: String = "custom",
+        productionFolders: List<ProductionFolder> = ProjectTemplateCatalog.defaultFoldersFor(templateId)
     ): Result<String> {
+        val safeTemplateId = templateId.trim().ifBlank { "custom" }.take(64)
+        val safeFolders = productionFolders
+            .ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(safeTemplateId) }
+            .take(20)
         if (isLocalMode(userId)) {
-            return localStore!!.createProject(userId, title, genreStyle, defaultSourceType, continuityBible)
+            return localStore!!.createProject(
+                userId = userId,
+                title = title,
+                genreStyle = genreStyle,
+                defaultSourceType = defaultSourceType,
+                continuityBible = continuityBible,
+                templateId = safeTemplateId,
+                productionFolders = safeFolders
+            )
         }
         val projectId = newSafeDocId("proj")
         val path = "users/$userId/projects/$projectId"
@@ -435,6 +457,8 @@ class StudioRepository(
                 "genreStyle" to cleanStyle,
                 "defaultSourceType" to defaultSourceType.wireValue,
                 "continuityBible" to cleanBible,
+                "templateId" to safeTemplateId,
+                "productionFolders" to safeFolders.map { it.toMap() },
                 "sequencesCount" to 0L,
                 "assetsCount" to 0L,
                 "createdAt" to FieldValue.serverTimestamp(),
@@ -464,6 +488,33 @@ class StudioRepository(
             db.document(path).update(
                 mapOf(
                     "continuityBible" to continuityBible.trim().take(20000),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProjectFolders(
+        userId: String,
+        projectId: String,
+        folders: List<ProductionFolder>
+    ): Result<Unit> {
+        val safeFolders = folders.take(20)
+        if (isLocalMode(userId)) {
+            return localStore!!.updateProjectFolders(projectId, safeFolders)
+        }
+        val path = "users/$userId/projects/$projectId"
+        return try {
+            requireUserId(userId)
+            db.document(path).update(
+                mapOf(
+                    "productionFolders" to safeFolders.map { it.toMap() },
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()

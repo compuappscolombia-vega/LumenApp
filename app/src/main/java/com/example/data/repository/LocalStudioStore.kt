@@ -10,6 +10,7 @@ import com.example.data.model.ColorSwatch
 import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.LightingSetup
+import com.example.data.model.ProductionFolder
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
@@ -20,6 +21,7 @@ import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.VfxBreakdown
 import com.example.data.util.LearningEngine
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -175,6 +177,8 @@ private data class LocalProjectEntry(
     val genreStyle: String,
     val defaultSourceType: String = "book",
     val continuityBible: String = "",
+    val templateId: String = "custom",
+    val productionFolders: List<ProductionFolder> = emptyList(),
     val sequencesCount: Int = 0,
     val assetsCount: Int = 0,
     val createdAtMillis: Long = 0L,
@@ -187,6 +191,8 @@ private data class LocalProjectEntry(
         genreStyle = genreStyle,
         defaultSourceType = SourceMaterialType.fromWire(defaultSourceType),
         continuityBible = continuityBible,
+        templateId = templateId.ifBlank { "custom" },
+        productionFolders = productionFolders.ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(templateId) },
         sequencesCount = sequencesCount,
         assetsCount = assetsCount,
         createdAtMillis = createdAtMillis,
@@ -287,12 +293,16 @@ class LocalStudioStore(
         title: String,
         genreStyle: String,
         defaultSourceType: SourceMaterialType,
-        continuityBible: String
+        continuityBible: String,
+        templateId: String = "custom",
+        productionFolders: List<ProductionFolder> = ProjectTemplateCatalog.defaultFoldersFor(templateId)
     ): Result<String> {
         val cleanTitle = title.trim().take(180)
         if (cleanTitle.isEmpty()) {
             return Result.failure(IllegalArgumentException("El título de la producción es obligatorio."))
         }
+        val safeTemplateId = templateId.trim().ifBlank { "custom" }.take(64)
+        val safeFolders = productionFolders.ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(safeTemplateId) }.take(20)
         val projectId = newId("proj")
         val now = System.currentTimeMillis()
         mutate { snap ->
@@ -303,6 +313,8 @@ class LocalStudioStore(
                 genreStyle = genreStyle.trim().ifBlank { "Épica Monumental IMAX" }.take(180),
                 defaultSourceType = defaultSourceType.wireValue,
                 continuityBible = continuityBible.trim().take(20000),
+                templateId = safeTemplateId,
+                productionFolders = safeFolders,
                 sequencesCount = 0,
                 assetsCount = 0,
                 createdAtMillis = now,
@@ -321,6 +333,24 @@ class LocalStudioStore(
                     if (proj.id == projectId) {
                         proj.copy(
                             continuityBible = continuityBible.trim().take(20000),
+                            updatedAtMillis = now
+                        )
+                    } else proj
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun updateProjectFolders(projectId: String, folders: List<ProductionFolder>): Result<Unit> {
+        val now = System.currentTimeMillis()
+        val safeFolders = folders.take(20)
+        mutate { snap ->
+            snap.copy(
+                projects = snap.projects.map { proj ->
+                    if (proj.id == projectId) {
+                        proj.copy(
+                            productionFolders = safeFolders,
                             updatedAtMillis = now
                         )
                     } else proj

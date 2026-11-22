@@ -3,11 +3,16 @@ package com.example
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.ai.AgentChatOutcome
 import com.example.data.ai.StudioAiClient
@@ -33,9 +38,16 @@ import com.example.data.repository.LOCAL_GUEST_UID
 import com.example.data.repository.LocalStudioStore
 import com.example.data.repository.StudioRepository
 import com.example.data.util.LearningEngine
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
+import com.example.ui.components.NewProjectDialog
 import com.example.ui.components.SourceIngestContent
+import com.example.ui.components.StudioLoadingOverlay
 import com.example.ui.components.readClipboardText
+import com.example.ui.screens.MetricsDashboardScreen
+import com.example.ui.screens.ProjectDashboardScreen
+import com.example.ui.screens.ScreenplayTabView
+import com.example.ui.screens.ShotsAndSoundTabView
 import com.example.ui.theme.LumenReelTheme
 import com.example.ui.viewmodel.StudioUiState
 import com.example.ui.viewmodel.StudioViewModel
@@ -516,5 +528,266 @@ class StudioFunctionalCujTest {
         assertEquals("Toma anamórfica con neblina", ui2.activeDirectorDraft.directorVision)
 
         job2.cancel()
+    }
+
+    @Test
+    fun `screenplay tab exposes mic dictation and device PDF save buttons`() {
+        val sampleSeq = ProductionSequence(
+            id = "seq_ui_1",
+            projectId = "proj_ui_1",
+            ownerId = "user_ui",
+            title = "Escena 1: El Muelle",
+            versionStatus = SequenceVersionStatus.DRAFT,
+            shotList = listOf(ShotSpec("01", "PG", "35mm", "Dolly in", 5.0, "Muelle nocturno", "Tensión")),
+            screenplay = listOf(
+                ScreenplayScene(
+                    sceneNumber = "1",
+                    slugline = "EXT. MUELLE - NOCHE",
+                    timeOfDay = "NOCHE",
+                    beats = listOf(ScreenplayBeat("action", text = "La niebla cubre el embarcadero."))
+                )
+            ),
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_086_400_000L
+        )
+
+        var savePdfClicked = 0
+        composeRule.setContent {
+            LumenReelTheme {
+                ScreenplayTabView(
+                    sequence = sampleSeq,
+                    isExporting = false,
+                    onOpenIngest = {},
+                    onSaveSceneDraft = { _, _, _, _, _, _, _ -> },
+                    onExportPdf = {},
+                    onSaveScriptSchedulePdf = { savePdfClicked++ },
+                    onExportMarkdown = {},
+                    onExportFountain = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("screenplay_dictate_scene_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("save_script_schedule_pdf_button").assertIsDisplayed().performClick()
+        assertEquals(1, savePdfClicked)
+    }
+
+    @Test
+    fun `metrics dashboard and global loading overlay render charts and feedback cleanly`() {
+        val sampleSeq = ProductionSequence(
+            id = "seq_ui_1",
+            projectId = "proj_ui_1",
+            ownerId = "user_ui",
+            title = "Escena 1: El Muelle",
+            versionStatus = SequenceVersionStatus.DRAFT,
+            shotList = listOf(ShotSpec("01", "PG", "35mm", "Dolly in", 5.0, "Muelle nocturno", "Tensión")),
+            screenplay = listOf(
+                ScreenplayScene(
+                    sceneNumber = "1",
+                    slugline = "EXT. MUELLE - NOCHE",
+                    timeOfDay = "NOCHE",
+                    beats = listOf(ScreenplayBeat("action", text = "La niebla cubre el embarcadero."))
+                )
+            ),
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_086_400_000L
+        )
+        val sampleProject = ProductionProject(
+            id = "proj_ui_1",
+            ownerId = "user_ui",
+            title = "El Faro Austral",
+            sequences = listOf(sampleSeq),
+            sequencesCount = 1,
+            createdAtMillis = 1_700_000_000_000L,
+            updatedAtMillis = 1_700_086_400_000L
+        )
+
+        var backClicked = false
+        composeRule.setContent {
+            LumenReelTheme {
+                androidx.compose.foundation.layout.Box(
+                    modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                ) {
+                    MetricsDashboardScreen(
+                        projects = listOf(sampleProject),
+                        onBack = { backClicked = true }
+                    )
+                    StudioLoadingOverlay(
+                        visible = true,
+                        headline = "Generando secuencia con Gemini…",
+                        subtitle = "Guardando en Firestore."
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("metrics_dashboard_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("metrics_total_sequences_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("metrics_script_length_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("global_loading_overlay").assertIsDisplayed()
+        composeRule.onNodeWithTag("global_loading_headline").assertIsDisplayed()
+        composeRule.onNodeWithTag("global_loading_subtitle").assertIsDisplayed()
+        assertFalse(backClicked)
+    }
+
+    @Test
+    fun `shots tab exposes save schedule pdf button cleanly`() {
+        val sampleSeq = ProductionSequence(
+            id = "seq_shots_1",
+            projectId = "proj_1",
+            ownerId = "user_1",
+            title = "Plano Secuencia",
+            shotList = listOf(ShotSpec("01", "PG", "28mm", "Tracking", 6.0, "Pasillo", "Urgencia"))
+        )
+        var scheduleSaveClicked = false
+        composeRule.setContent {
+            LumenReelTheme {
+                ShotsAndSoundTabView(
+                    sequence = sampleSeq,
+                    selectedShotIndex = 0,
+                    use3DStage = false,
+                    isExporting = false,
+                    onSelectShot = {},
+                    onToggle3DStage = {},
+                    onSaveSchedulePdf = { scheduleSaveClicked = true }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("shots_save_schedule_pdf_button").assertIsDisplayed().performClick()
+        assertTrue(scheduleSaveClicked)
+    }
+
+    @Test
+    fun `project template initialization persists folders in store and ViewModel`() = runTest {
+        val store = LocalStudioStore(context, testDispatcher)
+        val repo = StudioRepository(databaseId = "unused", localStore = store)
+        val ai = FakeStudioAiClient()
+        val vm = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
+
+        val collectorJob = backgroundScope.launch { vm.projectsUiState.collect {} }
+
+        val featureTemplate = ProjectTemplateCatalog.findById("feature_script")
+        vm.createProject(
+            title = "Crónicas del Océano",
+            genreStyle = featureTemplate.defaultStyle,
+            defaultSourceType = featureTemplate.defaultSourceType,
+            continuityBible = featureTemplate.continuityStarter,
+            templateId = featureTemplate.id,
+            productionFolders = featureTemplate.folders
+        )
+
+        var ui = awaitUiWhere(vm) { it.activeProject?.title == "Crónicas del Océano" }
+        val proj = ui.activeProject!!
+        assertEquals("feature_script", proj.templateId)
+        assertEquals(6, proj.productionFolders.size)
+        assertEquals("01_Guion_Tecnico_Actos_I_III", proj.productionFolders.first().name)
+
+        // Add custom folder & update folder notes
+        vm.addProductionFolder(proj, "Casting_Extra", "bible", "Actores secundarios")
+        ui = awaitUiWhere(vm) { it.activeProject?.productionFolders?.size == 7 }
+        val addedFolder = ui.activeProject!!.productionFolders.last()
+        assertEquals("07_Casting_Extra", addedFolder.name)
+
+        vm.updateProductionFolderNotes(ui.activeProject!!, addedFolder.id, "Audiciones viernes 10h")
+        ui = awaitUiWhere(vm) {
+            it.activeProject?.productionFolders?.lastOrNull()?.notes == "Audiciones viernes 10h"
+        }
+
+        // Open folder tab navigates cleanly
+        vm.openProductionFolderTab(ui.activeProject!!.productionFolders.first())
+        ui = awaitUiWhere(vm) { it.activeTab == WorkspaceTab.SCREENPLAY }
+        assertEquals(WorkspaceTab.SCREENPLAY, ui.activeTab)
+
+        // Verify persistence across fresh LocalStudioStore instance
+        val reloaded = LocalStudioStore(context, testDispatcher).observeProjects(LOCAL_GUEST_UID).first()
+        assertEquals(1, reloaded.size)
+        assertEquals("feature_script", reloaded.first().templateId)
+        assertEquals(7, reloaded.first().productionFolders.size)
+        assertEquals("Audiciones viernes 10h", reloaded.first().productionFolders.last().notes)
+
+        collectorJob.cancel()
+    }
+
+    @Test
+    fun `NewProjectDialog template picker auto-configures folders and emits selected template`() {
+        var createdTitle = ""
+        var createdTemplateId = ""
+        var createdFoldersCount = 0
+        var createdSourceType: SourceMaterialType? = null
+
+        composeRule.setContent {
+            LumenReelTheme {
+                NewProjectDialog(
+                    onDismiss = {},
+                    onCreate = { title, _, sourceType, _, templateId, folders ->
+                        createdTitle = title
+                        createdTemplateId = templateId
+                        createdFoldersCount = folders.size
+                        createdSourceType = sourceType
+                    }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("template_card_documentary").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("new_project_folders_preview").assertIsDisplayed()
+        composeRule.onNodeWithTag("new_project_title_input").performScrollTo().performTextInput("Voces del Sur")
+        composeRule.onNodeWithTag("confirm_create_project_button").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals("Voces del Sur", createdTitle)
+        assertEquals("documentary", createdTemplateId)
+        assertEquals(5, createdFoldersCount)
+        assertEquals(SourceMaterialType.AUDIOBOOK, createdSourceType)
+    }
+
+    @Config(sdk = [35], qualifiers = "w412dp-h915dp")
+    @Test
+    fun `ProjectDashboardScreen shows template badge and initialized folder count`() {
+        val docFolders = ProjectTemplateCatalog.defaultFoldersFor("documentary")
+        val proj = ProductionProject(
+            id = "proj_doc_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Expedición Antártica",
+            genreStyle = "Documental Observacional",
+            defaultSourceType = SourceMaterialType.AUDIOBOOK,
+            templateId = "documentary",
+            productionFolders = docFolders
+        )
+
+        composeRule.setContent {
+            LumenReelTheme {
+                ProjectDashboardScreen(
+                    currentUser = null,
+                    projects = listOf(proj),
+                    activeProjectId = proj.id,
+                    searchQuery = "",
+                    statusBanner = null,
+                    errorBanner = null,
+                    onSearchChange = {},
+                    onSelectProject = {},
+                    onCreateProjectClick = {},
+                    onDeleteProject = {},
+                    onOpenLearning = {},
+                    onOpenBlueprint = {},
+                    onExportManualPdf = {},
+                    onExportLibraryPdf = {},
+                    onOpenAccount = {},
+                    onDismissBanner = {},
+                    modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dashboard_projects_list")
+            .performScrollToNode(hasTestTag("dashboard_project_card_proj_doc_1"))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dashboard_project_card_proj_doc_1")
+            .assertIsDisplayed()
+            .assertTextContains("Documental · 5 carpetas", substring = true)
+        composeRule.onNodeWithTag("project_folders_badge_proj_doc_1", useUnmergedTree = true)
+            .assertIsDisplayed()
     }
 }

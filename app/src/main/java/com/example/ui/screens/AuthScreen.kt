@@ -142,20 +142,15 @@ fun AuthScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Surface(
-                        color = AmberGold,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.Movie,
-                                contentDescription = null,
-                                tint = ObsidianBg,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.img_lumenreel_logo),
+                        contentDescription = "Logo LumenReel",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, AmberGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                    )
                     Column {
                         Text(
                             text = stringResource(R.string.studio_brand_title),
