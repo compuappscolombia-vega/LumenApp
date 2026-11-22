@@ -91,6 +91,8 @@ data class StudioUiState(
     val isSavingToDb: Boolean = false,
     val isExporting: Boolean = false,
     val generatingFrameId: String? = null,
+    val isDarkMode: Boolean = true,
+    val showCalendarDialog: Boolean = false,
     val statusBanner: String? = null,
     val errorBanner: String? = null
 )
@@ -132,6 +134,8 @@ class StudioViewModel(
     private val _isSavingToDb = MutableStateFlow(false)
     private val _isExporting = MutableStateFlow(false)
     private val _generatingFrameId = MutableStateFlow<String?>(null)
+    private val _isDarkMode = MutableStateFlow(true)
+    private val _showCalendarDialog = MutableStateFlow(false)
     private val _statusBanner = MutableStateFlow<String?>(null)
     private val _errorBanner = MutableStateFlow<String?>(null)
 
@@ -240,22 +244,39 @@ class StudioViewModel(
         _selectedProjectId,
         _selectedSequenceId,
         _activeTab,
-        _searchQuery,
-        combine(_showDashboard, _showMetricsDashboard, _showIngestSheet, busyFlags) { dash, metrics, ingest, busy ->
-            ShellNavFlags(dash, metrics, ingest, busy)
+        _searchQuery
+    ) { pId, sId, tab, query ->
+        BasicNav(pId, sId, tab, query)
+    }.flatMapLatest { basic ->
+        combine(
+            _showDashboard,
+            _showMetricsDashboard,
+            _showIngestSheet,
+            _showCalendarDialog,
+            _isDarkMode,
+            busyFlags
+        ) { dash, metrics, ingest, cal, darkMode, busy ->
+            SelectionState(
+                selectedProjectId = basic.pId,
+                selectedSequenceId = basic.sId,
+                activeTab = basic.activeTab,
+                searchQuery = basic.query,
+                showDashboard = dash,
+                showMetricsDashboard = metrics,
+                showIngestSheet = ingest,
+                showCalendarDialog = cal,
+                isDarkMode = darkMode,
+                busy = busy
+            )
         }
-    ) { pId, sId, tab, query, shell ->
-        SelectionState(
-            selectedProjectId = pId,
-            selectedSequenceId = sId,
-            activeTab = tab,
-            searchQuery = query,
-            showDashboard = shell.showDashboard,
-            showMetricsDashboard = shell.showMetricsDashboard,
-            showIngestSheet = shell.showIngestSheet,
-            busy = shell.busy
-        )
     }
+
+    private data class BasicNav(
+        val pId: String,
+        val sId: String,
+        val activeTab: WorkspaceTab,
+        val query: String
+    )
 
     private val bannersState = combine(
         _generatingFrameId,
@@ -405,6 +426,8 @@ class StudioViewModel(
                         isSavingToDb = sel.busy.savingToDb,
                         isExporting = sel.busy.exporting,
                         generatingFrameId = banners.generatingFrameId,
+                        isDarkMode = sel.isDarkMode,
+                        showCalendarDialog = sel.showCalendarDialog,
                         statusBanner = banners.statusBanner,
                         errorBanner = banners.errorBanner
                     )
@@ -454,6 +477,14 @@ class StudioViewModel(
 
     fun setShowIngestSheet(show: Boolean) {
         _showIngestSheet.value = show
+    }
+
+    fun toggleDarkMode() {
+        _isDarkMode.value = !_isDarkMode.value
+    }
+
+    fun setShowCalendarDialog(show: Boolean) {
+        _showCalendarDialog.value = show
     }
 
     fun updatePreferredStyle(style: String) {
@@ -1343,6 +1374,7 @@ class StudioViewModel(
         val showDashboard: Boolean,
         val showMetricsDashboard: Boolean,
         val showIngestSheet: Boolean,
+        val showCalendarDialog: Boolean,
         val busy: BusyState
     )
 
@@ -1354,6 +1386,8 @@ class StudioViewModel(
         val showDashboard: Boolean,
         val showMetricsDashboard: Boolean,
         val showIngestSheet: Boolean,
+        val showCalendarDialog: Boolean,
+        val isDarkMode: Boolean,
         val busy: BusyState
     )
 

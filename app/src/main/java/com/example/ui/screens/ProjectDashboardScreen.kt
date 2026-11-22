@@ -36,6 +36,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
@@ -113,6 +115,9 @@ fun ProjectDashboardScreen(
     searchQuery: String,
     statusBanner: String?,
     errorBanner: String?,
+    isDarkMode: Boolean = true,
+    onToggleDarkMode: () -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
     onSearchChange: (String) -> Unit,
     onSelectProject: (ProductionProject) -> Unit,
     onCreateProjectClick: () -> Unit,
@@ -189,6 +194,30 @@ fun ProjectDashboardScreen(
                 },
                 actions = {
                     IconButton(
+                        onClick = onToggleDarkMode,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("dashboard_theme_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Brightness6,
+                            contentDescription = "Cambiar tema de color",
+                            tint = AmberGold
+                        )
+                    }
+                    IconButton(
+                        onClick = onOpenCalendar,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("dashboard_calendar_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CalendarMonth,
+                            contentDescription = "Calendario de producción",
+                            tint = AmberGold
+                        )
+                    }
+                    IconButton(
                         onClick = onOpenMetrics,
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
@@ -229,6 +258,24 @@ fun ProjectDashboardScreen(
                             expanded = overflowExpanded,
                             onDismissRequest = { overflowExpanded = false }
                         ) {
+                            DropdownMenuItem(
+                                leadingIcon = { Icon(Icons.Rounded.Brightness6, contentDescription = null) },
+                                text = { Text(if (isDarkMode) "Cambiar a Modo Claro" else "Cambiar a Modo Oscuro") },
+                                onClick = {
+                                    overflowExpanded = false
+                                    onToggleDarkMode()
+                                },
+                                modifier = Modifier.testTag("dashboard_theme_menu_item")
+                            )
+                            DropdownMenuItem(
+                                leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null) },
+                                text = { Text("Calendario de producción") },
+                                onClick = {
+                                    overflowExpanded = false
+                                    onOpenCalendar()
+                                },
+                                modifier = Modifier.testTag("dashboard_calendar_menu_item")
+                            )
                             DropdownMenuItem(
                                 leadingIcon = { Icon(Icons.Rounded.Insights, contentDescription = null) },
                                 text = { Text("Analítica del estudio") },

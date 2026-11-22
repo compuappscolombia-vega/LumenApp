@@ -790,4 +790,68 @@ class StudioFunctionalCujTest {
         composeRule.onNodeWithTag("project_folders_badge_proj_doc_1", useUnmergedTree = true)
             .assertIsDisplayed()
     }
+
+    @Test
+    fun `viewModel supports dark mode toggle`() = runTest {
+        val store = LocalStudioStore(context, testDispatcher)
+        val repo = StudioRepository(databaseId = "unused", localStore = store)
+        val ai = FakeStudioAiClient()
+        val vm = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
+
+        val collectorJob = backgroundScope.launch { vm.projectsUiState.collect {} }
+        var ui = awaitUiWhere(vm)
+        assertTrue(ui.isDarkMode)
+
+        vm.toggleDarkMode()
+        ui = awaitUiWhere(vm) { !it.isDarkMode }
+        assertFalse(ui.isDarkMode)
+
+        vm.toggleDarkMode()
+        ui = awaitUiWhere(vm) { it.isDarkMode }
+        assertTrue(ui.isDarkMode)
+
+        collectorJob.cancel()
+    }
+
+    @Test
+    fun `ProductionCalendarDialog renders milestones and allows day inspection`() {
+        val sampleProject = ProductionProject(
+            id = "proj_cal",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Cine Cal",
+            genreStyle = "Drama",
+            createdAtMillis = System.currentTimeMillis(),
+            sequences = listOf(
+                ProductionSequence(
+                    id = "seq_cal_1",
+                    projectId = "proj_cal",
+                    ownerId = LOCAL_GUEST_UID,
+                    title = "Secuencia 1",
+                    versionStatus = SequenceVersionStatus.FINAL,
+                    createdAtMillis = System.currentTimeMillis(),
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+            )
+        )
+
+        var dismissed = false
+        var selectedSeqId: String? = null
+
+        composeRule.setContent {
+            LumenReelTheme(darkTheme = true) {
+                com.example.ui.components.ProductionCalendarDialog(
+                    project = sampleProject,
+                    onDismiss = { dismissed = true },
+                    onSelectSequence = { seqId -> selectedSeqId = seqId }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("production_calendar_grid").assertIsDisplayed()
+        composeRule.onNodeWithTag("calendar_prev_month").assertIsDisplayed()
+        composeRule.onNodeWithTag("calendar_next_month").assertIsDisplayed()
+        composeRule.onNodeWithTag("close_calendar_dialog").assertIsDisplayed().performClick()
+        assertTrue(dismissed)
+    }
 }
+

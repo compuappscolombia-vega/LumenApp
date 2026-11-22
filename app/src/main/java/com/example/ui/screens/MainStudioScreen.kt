@@ -32,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -280,36 +282,40 @@ private fun StudioWorkspaceShell(
         else -> "Guardando en Firestore…" to "Sincronizando cambios de forma privada con tu perfil de Google."
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (ui.showMetricsDashboard) {
-            MetricsDashboardScreen(
-                projects = ui.projects,
-                onBack = { vm.setShowMetricsDashboard(false) }
-            )
-        } else if (ui.showDashboard) {
-            ProjectDashboardScreen(
-                currentUser = currentUser,
-                projects = ui.projects,
-                activeProjectId = ui.activeProject?.id.orEmpty(),
-                searchQuery = ui.searchQuery,
-                statusBanner = ui.statusBanner,
-                errorBanner = ui.errorBanner,
-                onSearchChange = vm::updateSearchQuery,
-                onSelectProject = { proj ->
-                    vm.selectProject(proj.id)
-                    vm.setShowDashboard(false)
-                },
-                onCreateProjectClick = { showNewProjectDialog = true },
-                onDeleteProject = vm::deleteProject,
-                onOpenLearning = { showLearningDialog = true },
-                onOpenBlueprint = { showBlueprintDialog = true },
-                onOpenMetrics = { vm.setShowMetricsDashboard(true) },
-                onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
-                onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
-                onOpenAccount = { showAccountDialog = true },
-                onDismissBanner = vm::clearBanners
-            )
-        } else {
+    LumenReelTheme(darkTheme = ui.isDarkMode) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (ui.showMetricsDashboard) {
+                MetricsDashboardScreen(
+                    projects = ui.projects,
+                    onBack = { vm.setShowMetricsDashboard(false) }
+                )
+            } else if (ui.showDashboard) {
+                ProjectDashboardScreen(
+                    currentUser = currentUser,
+                    projects = ui.projects,
+                    activeProjectId = ui.activeProject?.id.orEmpty(),
+                    searchQuery = ui.searchQuery,
+                    statusBanner = ui.statusBanner,
+                    errorBanner = ui.errorBanner,
+                    isDarkMode = ui.isDarkMode,
+                    onToggleDarkMode = vm::toggleDarkMode,
+                    onOpenCalendar = { vm.setShowCalendarDialog(true) },
+                    onSearchChange = vm::updateSearchQuery,
+                    onSelectProject = { proj ->
+                        vm.selectProject(proj.id)
+                        vm.setShowDashboard(false)
+                    },
+                    onCreateProjectClick = { showNewProjectDialog = true },
+                    onDeleteProject = vm::deleteProject,
+                    onOpenLearning = { showLearningDialog = true },
+                    onOpenBlueprint = { showBlueprintDialog = true },
+                    onOpenMetrics = { vm.setShowMetricsDashboard(true) },
+                    onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
+                    onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
+                    onOpenAccount = { showAccountDialog = true },
+                    onDismissBanner = vm::clearBanners
+                )
+            } else {
             BackHandler {
                 vm.setShowDashboard(true)
             }
@@ -432,6 +438,26 @@ private fun StudioWorkspaceShell(
                             }
                         },
                         actions = {
+                            IconButton(
+                                onClick = vm::toggleDarkMode,
+                                modifier = Modifier.testTag("studio_theme_toggle_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Brightness6,
+                                    contentDescription = "Cambiar tema de color",
+                                    tint = AmberGold
+                                )
+                            }
+                            IconButton(
+                                onClick = { vm.setShowCalendarDialog(true) },
+                                modifier = Modifier.testTag("studio_calendar_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CalendarMonth,
+                                    contentDescription = "Calendario de producción",
+                                    tint = AmberGold
+                                )
+                            }
                             IconButton(
                                 onClick = { vm.setShowDashboard(true) },
                                 modifier = Modifier.testTag("open_dashboard_button")
@@ -882,12 +908,24 @@ private fun StudioWorkspaceShell(
         )
     }
 
-        StudioLoadingOverlay(
-            visible = showGlobalLoader,
-            headline = loaderHeadline,
-            subtitle = loaderSubtitle
+    if (ui.showCalendarDialog) {
+        ProductionCalendarDialog(
+            project = ui.activeProject,
+            onDismiss = { vm.setShowCalendarDialog(false) },
+            onSelectSequence = { seqId ->
+                vm.selectSequence(seqId)
+                vm.setShowDashboard(false)
+                vm.setShowCalendarDialog(false)
+            }
         )
     }
+
+    StudioLoadingOverlay(
+        visible = showGlobalLoader,
+        headline = loaderHeadline,
+        subtitle = loaderSubtitle
+    )
+  }
 }
 
 @Composable
