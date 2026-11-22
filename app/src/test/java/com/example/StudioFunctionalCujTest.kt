@@ -20,9 +20,11 @@ import com.example.data.model.AgentMessage
 import com.example.data.model.AgentRoleFocus
 import com.example.data.model.AgentToolAction
 import com.example.data.model.AudioAnalysisReport
+import com.example.data.model.CalendarMilestoneType
 import com.example.data.model.DirectorDraftEdits
 import com.example.data.model.IngestDraftState
 import com.example.data.model.LightingSetup
+import com.example.data.model.ProductionMilestoneItem
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
@@ -33,6 +35,7 @@ import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.ThinkingDepth
+import com.example.data.model.UserStudioConfig
 import com.example.data.model.WorkspaceTab
 import com.example.data.repository.LOCAL_GUEST_UID
 import com.example.data.repository.LocalStudioStore
@@ -40,7 +43,9 @@ import com.example.data.repository.StudioRepository
 import com.example.data.util.LearningEngine
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
+import com.example.ui.components.AccountDialog
 import com.example.ui.components.NewProjectDialog
+import com.example.ui.components.ProductionCalendarDialog
 import com.example.ui.components.SourceIngestContent
 import com.example.ui.components.StudioLoadingOverlay
 import com.example.ui.components.readClipboardText
@@ -191,6 +196,7 @@ class StudioFunctionalCujTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         File(context.filesDir, "lumenreel_local_studio_v1.json").delete()
+        context.getSharedPreferences("lumenreel_prefs", Context.MODE_PRIVATE).edit().clear().commit()
         Dispatchers.setMain(testDispatcher)
     }
 
@@ -852,6 +858,243 @@ class StudioFunctionalCujTest {
         composeRule.onNodeWithTag("calendar_next_month").assertIsDisplayed()
         composeRule.onNodeWithTag("close_calendar_dialog").assertIsDisplayed().performClick()
         assertTrue(dismissed)
+    }
+
+    @Test
+    fun `studio config and workspace drafts persist across store and ViewModel recreation`() = runTest {
+        val store1 = LocalStudioStore(context, testDispatcher)
+        val repo1 = StudioRepository(databaseId = "unused", localStore = store1)
+        val ai = FakeStudioAiClient()
+        val vm1 = StudioViewModel(repo1, ai, LOCAL_GUEST_UID)
+        val job1 = backgroundScope.launch { vm1.projectsUiState.collect {} }
+
+        vm1.createProject("Config Film", "Documental Observacional", SourceMaterialType.BOOK, "Biblia C1")
+        var ui1 = awaitUiWhere(vm1) { it.activeProject?.title == "Config Film" }
+        val proj = ui1.activeProject!!
+
+        // Update comprehensive studio config (light theme, preferred style, aspect ratio, deep depth, stage3D false)
+        val customConfig = UserStudioConfig(
+            themeMode = "light",
+            preferredStyle = "Thriller Psicológico Neo-Noir",
+            defaultAspectRatio = "1.85:1",
+            defaultThinkingDepth = ThinkingDepth.DEEP.name,
+            autoSaveDrafts = true,
+            stage3DDefault = false
+        )
+        vm1.updateStudioConfig(customConfig)
+        vm1.updateIngestDraft(proj) {
+            it.copy(sequenceTitle = "Borrador Persistido", sourceText = "Notas iniciales de rodaje.")
+        }
+        vm1.updateAgentDraftMessage(proj.id, "Agregar plano dron")
+        vm1.selectTab(WorkspaceTab.SHOTS)
+
+        ui1 = awaitUiWhere(vm1) {
+            !it.isDarkMode &&
+                it.studioConfig.preferredStyle == "Thriller Psicológico Neo-Noir" &&
+                it.activeTab == WorkspaceTab.SHOTS
+        }
+        assertFalse(ui1.isDarkMode)
+        assertFalse(ui1.activeStage3DMode)
+        assertEquals("1.85:1", ui1.studioConfig.defaultAspectRatio)
+        assertEquals(ThinkingDepth.DEEP.name, ui1.studioConfig.defaultThinkingDepth)
+        assertEquals("Borrador Persistido", ui1.activeIngestDraft.sequenceTitle)
+        assertEquals("Agregar plano dron", ui1.activeAgentDraftMessage)
+        job1.cancel()
+
+        // Recreate completely fresh LocalStudioStore, StudioRepository, and StudioViewModel
+        val store2 = LocalStudioStore(context, testDispatcher)
+        val repo2 = StudioRepository(databaseId = "unused", localStore = store2)
+        assertFalse(repo2.getCachedThemeDark())
+        val vm2 = StudioViewModel(repo2, ai, LOCAL_GUEST_UID)
+        val job2 = backgroundScope.launch { vm2.projectsUiState.collect {} }
+
+        val ui2 = awaitUiWhere(vm2) {
+            it.activeProject?.id == proj.id &&
+                it.studioConfig.preferredStyle == "Thriller Psicológico Neo-Noir"
+        }
+        assertFalse(ui2.isDarkMode)
+        assertEquals("light", ui2.studioConfig.themeMode)
+        assertEquals("1.85:1", ui2.studioConfig.defaultAspectRatio)
+        assertEquals(ThinkingDepth.DEEP.name, ui2.studioConfig.defaultThinkingDepth)
+        assertFalse(ui2.studioConfig.stage3DDefault)
+        assertEquals(WorkspaceTab.SHOTS, ui2.activeTab)
+        assertEquals("Borrador Persistido", ui2.activeIngestDraft.sequenceTitle)
+        assertEquals("Agregar plano dron", ui2.activeAgentDraftMessage)
+        job2.cancel()
+    }
+
+    @Test
+    fun `milestone CRUD persists across ViewModel and store reload`() = runTest {
+        val store1 = LocalStudioStore(context, testDispatcher)
+        val repo1 = StudioRepository(databaseId = "unused", localStore = store1)
+        val ai = FakeStudioAiClient()
+        val vm1 = StudioViewModel(repo1, ai, LOCAL_GUEST_UID)
+        val job1 = backgroundScope.launch { vm1.projectsUiState.collect {} }
+
+        vm1.createProject("Milestones Film", "Drama", SourceMaterialType.STORY, "")
+        val proj = awaitUiWhere(vm1) { it.activeProject?.title == "Milestones Film" }.activeProject!!
+
+        val dayMillis = System.currentTimeMillis()
+        vm1.addMilestone(
+            projectId = proj.id,
+            title = "Rodaje Nocturno Muelle",
+            notes = "Escena 1 y 2",
+            dateMillis = dayMillis,
+            type = CalendarMilestoneType.SHOOTING_DAY,
+            sequenceId = null
+        )
+        var ui = awaitUiWhere(vm1) { it.milestones.size == 1 }
+        val ms = ui.milestones.first()
+        assertEquals("Rodaje Nocturno Muelle", ms.title)
+        assertFalse(ms.completed)
+
+        vm1.toggleMilestoneCompleted(proj.id, ms.id, true)
+        ui = awaitUiWhere(vm1) { it.milestones.firstOrNull()?.completed == true }
+        assertTrue(ui.milestones.first().completed)
+        job1.cancel()
+
+        // Reload via fresh store & verify persisted milestone + delete
+        val store2 = LocalStudioStore(context, testDispatcher)
+        val repo2 = StudioRepository(databaseId = "unused", localStore = store2)
+        val vm2 = StudioViewModel(repo2, ai, LOCAL_GUEST_UID)
+        val job2 = backgroundScope.launch { vm2.projectsUiState.collect {} }
+
+        var ui2 = awaitUiWhere(vm2) { it.milestones.size == 1 }
+        assertTrue(ui2.milestones.first().completed)
+        assertEquals("Rodaje Nocturno Muelle", ui2.milestones.first().title)
+
+        vm2.deleteMilestone(proj.id, ui2.milestones.first().id)
+        ui2 = awaitUiWhere(vm2) { it.milestones.isEmpty() }
+        assertTrue(ui2.milestones.isEmpty())
+        job2.cancel()
+    }
+
+    @Test
+    fun `ProductionCalendarDialog allows creating, toggling, and deleting custom milestones`() {
+        val now = System.currentTimeMillis()
+        val proj = ProductionProject(
+            id = "proj_cal_crud",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Horizonte",
+            createdAtMillis = now
+        )
+        val existingMs = ProductionMilestoneItem(
+            id = "ms_existing",
+            projectId = proj.id,
+            ownerId = LOCAL_GUEST_UID,
+            title = "Entrega Corte Final",
+            notes = "Sala Master",
+            dateMillis = now,
+            milestoneType = CalendarMilestoneType.DEADLINE.wireValue,
+            completed = false
+        )
+        var addedTitle = ""
+        var addedType: CalendarMilestoneType? = null
+        var toggledId = ""
+        var toggledValue = false
+        var deletedId = ""
+
+        composeRule.setContent {
+            LumenReelTheme(darkTheme = false) {
+                ProductionCalendarDialog(
+                    project = proj,
+                    milestones = listOf(existingMs),
+                    onDismiss = {},
+                    onSelectSequence = {},
+                    onAddMilestone = { title, _, _, type, _ ->
+                        addedTitle = title
+                        addedType = type
+                    },
+                    onToggleMilestone = { id, completed ->
+                        toggledId = id
+                        toggledValue = completed
+                    },
+                    onDeleteMilestone = { id -> deletedId = id }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("calendar_milestone_custom_ms_existing").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("calendar_toggle_ms_ms_existing").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals("ms_existing", toggledId)
+        assertTrue(toggledValue)
+
+        // Open inline add form and create a new milestone
+        composeRule.onNodeWithTag("calendar_add_milestone_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("calendar_type_review").performScrollTo().performClick()
+        composeRule.onNodeWithTag("calendar_milestone_title_input").performScrollTo().performTextInput("Revisión VFX")
+        composeRule.onNodeWithTag("calendar_save_milestone_button").performClick()
+        composeRule.waitForIdle()
+        assertEquals("Revisión VFX", addedTitle)
+        assertEquals(CalendarMilestoneType.REVIEW, addedType)
+
+        // Delete existing milestone
+        composeRule.onNodeWithTag("calendar_delete_ms_ms_existing").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals("ms_existing", deletedId)
+    }
+
+    @Config(sdk = [35], qualifiers = "w412dp-h915dp")
+    @Test
+    fun `light and dark theme render dashboard and account configuration dialogs cleanly`() {
+        val proj = ProductionProject(
+            id = "proj_theme_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Sol de Medianoche",
+            genreStyle = "Drama",
+            sequences = listOf(ProductionSequence(id = "s1", projectId = "proj_theme_1", title = "Escena 1"))
+        )
+
+        var toggledTheme = 0
+        var savedCfg: UserStudioConfig? = null
+
+        composeRule.setContent {
+            LumenReelTheme(darkTheme = false) {
+                androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    ProjectDashboardScreen(
+                        currentUser = null,
+                        projects = listOf(proj),
+                        activeProjectId = proj.id,
+                        searchQuery = "",
+                        statusBanner = null,
+                        errorBanner = null,
+                        onSearchChange = {},
+                        onSelectProject = {},
+                        onCreateProjectClick = {},
+                        onDeleteProject = {},
+                        onOpenLearning = {},
+                        onOpenBlueprint = {},
+                        onExportManualPdf = {},
+                        onExportLibraryPdf = {},
+                        onOpenAccount = {},
+                        onDismissBanner = {}
+                    )
+                    AccountDialog(
+                        user = null,
+                        studioConfig = UserStudioConfig(themeMode = "light", preferredStyle = "Drama"),
+                        isDarkMode = false,
+                        onToggleDarkMode = { toggledTheme++ },
+                        onSaveStudioConfig = { savedCfg = it },
+                        onDismiss = {},
+                        onSignOut = {}
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("account_theme_switch").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, toggledTheme)
+
+        composeRule.onNodeWithTag("account_ratio_16:9").performScrollTo().performClick()
+        composeRule.onNodeWithTag("account_depth_DEEP").performScrollTo().performClick()
+        composeRule.onNodeWithTag("save_profile_style_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertNotNull(savedCfg)
+        assertEquals("16:9", savedCfg?.defaultAspectRatio)
+        assertEquals(ThinkingDepth.DEEP.name, savedCfg?.defaultThinkingDepth)
     }
 }
 

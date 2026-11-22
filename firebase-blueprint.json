@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "Perfil privado del cineasta o productor autenticado en LumenReel Studio.",
+      "description": "Perfil privado y configuración persistente del cineasta o productor autenticado en LumenReel Studio.",
       "type": "object",
       "properties": {
         "uid": {
@@ -20,6 +20,41 @@
         "preferredStyle": {
           "type": "string",
           "description": "Estilo cinematográfico preferido opcional (<=160 caracteres)."
+        },
+        "themeMode": {
+          "type": "string",
+          "enum": ["dark", "light"],
+          "description": "Tema visual global preferido del usuario."
+        },
+        "defaultAspectRatio": {
+          "type": "string",
+          "enum": ["2.39:1", "1.85:1", "16:9", "1.43:1"],
+          "description": "Relación de aspecto por defecto para nuevas secuencias."
+        },
+        "defaultThinkingDepth": {
+          "type": "string",
+          "enum": ["STANDARD", "DEEP"],
+          "description": "Profundidad de análisis por defecto."
+        },
+        "autoSaveDrafts": {
+          "type": "boolean",
+          "description": "Si está activo, guarda borradores de trabajo localmente entre sesiones."
+        },
+        "stage3DDefault": {
+          "type": "boolean",
+          "description": "Define si el escenario 3D está activo por defecto en Planos."
+        },
+        "lastProjectId": {
+          "type": "string",
+          "description": "Último proyecto abierto."
+        },
+        "lastSequenceId": {
+          "type": "string",
+          "description": "Última secuencia abierta."
+        },
+        "lastTab": {
+          "type": "string",
+          "description": "Última pestaña activa en el espacio de trabajo."
         },
         "role": {
           "type": "string",
@@ -182,6 +217,51 @@
         "updatedAt"
       ]
     },
+    "ProductionMilestone": {
+      "title": "ProductionMilestone",
+      "description": "Hito, día de rodaje, entrega o revisión programada en el calendario de producción de un proyecto.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "title": { "type": "string" },
+        "notes": { "type": "string" },
+        "dateMillis": { "type": "integer" },
+        "milestoneType": {
+          "type": "string",
+          "enum": ["shooting_day", "deadline", "review", "premiere"]
+        },
+        "sequenceId": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "projectId",
+        "ownerId",
+        "title",
+        "notes",
+        "dateMillis",
+        "milestoneType",
+        "completed",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StoryboardAsset": {
+      "title": "StoryboardAsset",
+      "description": "Ruta persistida de fotograma Nano generado para una tarjeta de storyboard (compatible con secuencias en borrador y versión final).",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "sequenceId": { "type": "string" },
+        "frameId": { "type": "string" },
+        "localImagePath": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "ownerId", "sequenceId", "frameId", "localImagePath", "updatedAt"]
+    },
     "AgentMessage": {
       "title": "AgentMessage",
       "description": "Turno de conversación entre el productor y el Agente Cinematográfico Tripartito.",
@@ -246,7 +326,7 @@
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
-      "description": "Perfil privado del usuario autenticado (PII aislada por propietario)."
+      "description": "Perfil privado y configuración del usuario autenticado (PII aislada por propietario)."
     },
     "/users/{userId}/projects/{projectId}": {
       "schema": { "$ref": "#/entities/StudioProject" },
@@ -255,6 +335,14 @@
     "/users/{userId}/projects/{projectId}/sequences/{sequenceId}": {
       "schema": { "$ref": "#/entities/ProjectSequence" },
       "description": "Secuencias y expedientes cinematográficos dentro de un proyecto."
+    },
+    "/users/{userId}/projects/{projectId}/milestones/{milestoneId}": {
+      "schema": { "$ref": "#/entities/ProductionMilestone" },
+      "description": "Hitos y días de rodaje del calendario de producción de un proyecto."
+    },
+    "/users/{userId}/projects/{projectId}/storyboard_assets/{assetId}": {
+      "schema": { "$ref": "#/entities/StoryboardAsset" },
+      "description": "Fotogramas Nano generados para tarjetas de storyboard."
     },
     "/users/{userId}/projects/{projectId}/agent_messages/{messageId}": {
       "schema": { "$ref": "#/entities/AgentMessage" },

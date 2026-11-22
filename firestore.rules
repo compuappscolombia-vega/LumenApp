@@ -30,13 +30,27 @@ service cloud.firestore {
     // --- Validation Helpers ---
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll(['uid', 'displayName', 'email', 'role', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'displayName', 'email', 'preferredStyle', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'preferredStyle',
+          'themeMode', 'defaultAspectRatio', 'defaultThinkingDepth',
+          'autoSaveDrafts', 'stage3DDefault',
+          'lastProjectId', 'lastSequenceId', 'lastTab',
+          'role', 'createdAt', 'updatedAt'
+        ])
         && data.uid == userId
         && data.uid == request.auth.uid
         && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
         && data.role == 'director'
         && (!('preferredStyle' in data) || (data.preferredStyle is string && data.preferredStyle.size() <= 160))
+        && (!('themeMode' in data) || (data.themeMode in ['dark', 'light']))
+        && (!('defaultAspectRatio' in data) || (data.defaultAspectRatio in ['2.39:1', '1.85:1', '16:9', '1.43:1']))
+        && (!('defaultThinkingDepth' in data) || (data.defaultThinkingDepth in ['STANDARD', 'DEEP']))
+        && (!('autoSaveDrafts' in data) || (data.autoSaveDrafts is bool))
+        && (!('stage3DDefault' in data) || (data.stage3DDefault is bool))
+        && (!('lastProjectId' in data) || (data.lastProjectId is string && data.lastProjectId.size() <= 128))
+        && (!('lastSequenceId' in data) || (data.lastSequenceId is string && data.lastSequenceId.size() <= 128))
+        && (!('lastTab' in data) || (data.lastTab is string && data.lastTab.size() <= 40))
         && data.createdAt is timestamp && data.createdAt <= request.time
         && data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -97,6 +111,44 @@ service cloud.firestore {
         && data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidMilestone(data, userId, projectId) {
+      return data.keys().hasAll([
+          'projectId', 'ownerId', 'title', 'notes', 'dateMillis',
+          'milestoneType', 'completed', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'projectId', 'ownerId', 'title', 'notes', 'dateMillis',
+          'milestoneType', 'sequenceId', 'completed', 'createdAt', 'updatedAt'
+        ])
+        && data.projectId == projectId
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.notes is string && data.notes.size() <= 1000
+        && data.dateMillis is int && data.dateMillis > 0
+        && data.milestoneType in ['shooting_day', 'deadline', 'review', 'premiere']
+        && (!('sequenceId' in data) || (data.sequenceId is string && data.sequenceId.size() <= 128))
+        && data.completed is bool
+        && data.createdAt is timestamp && data.createdAt <= request.time
+        && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidStoryboardAsset(data, userId, projectId) {
+      return data.keys().hasAll([
+          'projectId', 'ownerId', 'sequenceId', 'frameId', 'localImagePath', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'projectId', 'ownerId', 'sequenceId', 'frameId', 'localImagePath', 'updatedAt'
+        ])
+        && data.projectId == projectId
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.sequenceId is string && data.sequenceId.size() >= 1 && data.sequenceId.size() <= 128
+        && data.frameId is string && data.frameId.size() >= 1 && data.frameId.size() <= 128
+        && data.localImagePath is string && data.localImagePath.size() >= 1 && data.localImagePath.size() <= 1000
+        && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     function isValidAgentMessage(data, userId, projectId) {
       return data.keys().hasAll([
           'projectId', 'ownerId', 'role', 'focus', 'content', 'createdAt'
@@ -143,7 +195,13 @@ service cloud.firestore {
         && incoming().uid == existing().uid
         && incoming().role == existing().role
         && incoming().createdAt == existing().createdAt
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'preferredStyle', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'preferredStyle',
+          'themeMode', 'defaultAspectRatio', 'defaultThinkingDepth',
+          'autoSaveDrafts', 'stage3DDefault',
+          'lastProjectId', 'lastSequenceId', 'lastTab',
+          'updatedAt'
+        ]);
       allow delete: if false;
 
       match /projects/{projectId} {
@@ -189,6 +247,40 @@ service cloud.firestore {
           allow delete: if isValidId(userId) && isValidId(projectId) && isValidId(sequenceId)
             && isOwner(userId)
             && existing().versionStatus == 'draft';
+        }
+
+        match /milestones/{milestoneId} {
+          allow get: if isValidId(userId) && isValidId(projectId) && isValidId(milestoneId) && isOwner(userId);
+          allow list: if isValidId(userId) && isValidId(projectId) && isOwner(userId);
+          allow create: if isValidId(userId) && isValidId(projectId) && isValidId(milestoneId)
+            && isOwner(userId)
+            && isValidMilestone(incoming(), userId, projectId)
+            && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
+          allow update: if isValidId(userId) && isValidId(projectId) && isValidId(milestoneId)
+            && isOwner(userId)
+            && isValidMilestone(incoming(), userId, projectId)
+            && incoming().projectId == existing().projectId
+            && incoming().ownerId == existing().ownerId
+            && incoming().createdAt == existing().createdAt
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'completed', 'title', 'notes', 'dateMillis', 'milestoneType', 'sequenceId', 'updatedAt'
+            ]);
+          allow delete: if isValidId(userId) && isValidId(projectId) && isValidId(milestoneId) && isOwner(userId);
+        }
+
+        match /storyboard_assets/{assetId} {
+          allow get: if isValidId(userId) && isValidId(projectId) && isValidId(assetId) && isOwner(userId);
+          allow list: if isValidId(userId) && isValidId(projectId) && isOwner(userId);
+          allow create: if isValidId(userId) && isValidId(projectId) && isValidId(assetId)
+            && isOwner(userId)
+            && isValidStoryboardAsset(incoming(), userId, projectId)
+            && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
+          allow update: if isValidId(userId) && isValidId(projectId) && isValidId(assetId)
+            && isOwner(userId)
+            && isValidStoryboardAsset(incoming(), userId, projectId)
+            && incoming().projectId == existing().projectId
+            && incoming().ownerId == existing().ownerId;
+          allow delete: if isValidId(userId) && isValidId(projectId) && isValidId(assetId) && isOwner(userId);
         }
 
         match /agent_messages/{messageId} {

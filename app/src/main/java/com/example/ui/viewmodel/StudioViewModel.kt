@@ -14,11 +14,13 @@ import com.example.data.ai.StudioAiService
 import com.example.data.model.AgentMessage
 import com.example.data.model.AgentRoleFocus
 import com.example.data.model.AudioAnalysisReport
+import com.example.data.model.CalendarMilestoneType
 import com.example.data.model.DirectorDraftEdits
 import com.example.data.model.IngestDraftState
 import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.ProductionFolder
+import com.example.data.model.ProductionMilestoneItem
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
@@ -28,7 +30,11 @@ import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.StudioIntelligenceReport
 import com.example.data.model.ThinkingDepth
+import com.example.data.model.UserStudioConfig
 import com.example.data.model.WorkspaceTab
+import com.example.data.repository.LocalWorkspaceDraftSnapshot
+import com.example.data.repository.PersistedDirectorDraft
+import com.example.data.repository.PersistedIngestDraft
 import com.example.data.repository.StudioRepository
 import com.example.data.repository.UserProfileState
 import com.example.data.util.AgentLogic
@@ -93,6 +99,8 @@ data class StudioUiState(
     val generatingFrameId: String? = null,
     val isDarkMode: Boolean = true,
     val showCalendarDialog: Boolean = false,
+    val milestones: List<ProductionMilestoneItem> = emptyList(),
+    val studioConfig: UserStudioConfig = UserStudioConfig(),
     val statusBanner: String? = null,
     val errorBanner: String? = null
 )
@@ -134,10 +142,56 @@ class StudioViewModel(
     private val _isSavingToDb = MutableStateFlow(false)
     private val _isExporting = MutableStateFlow(false)
     private val _generatingFrameId = MutableStateFlow<String?>(null)
-    private val _isDarkMode = MutableStateFlow(true)
+    private val _studioConfig = MutableStateFlow(repository.getCachedUserConfig(currentUserId))
+    private val _isDarkMode = MutableStateFlow(_studioConfig.value.isDarkMode)
     private val _showCalendarDialog = MutableStateFlow(false)
     private val _statusBanner = MutableStateFlow<String?>(null)
     private val _errorBanner = MutableStateFlow<String?>(null)
+    @Volatile
+    private var isSavingConfig = false
+
+    init {
+        val saved = repository.loadWorkspaceDrafts(currentUserId)
+        val hasActiveSession = _selectedProjectId.value.isNotBlank() ||
+            _ingestDrafts.value.isNotEmpty() ||
+            _directorDraftsBySeq.value.isNotEmpty() ||
+            _agentDraftByProject.value.isNotEmpty()
+        if (!hasActiveSession) {
+            if (saved.selectedProjectId.isNotBlank()) {
+                _selectedProjectId.value = saved.selectedProjectId
+            }
+            if (saved.selectedSequenceId.isNotBlank()) {
+                _selectedSequenceId.value = saved.selectedSequenceId
+            }
+            _activeTab.value = WorkspaceTab.fromRouteKey(saved.activeTab)
+            _searchQuery.value = saved.searchQuery
+            _showDashboard.value = saved.showDashboard
+            if (saved.ingestDrafts.isNotEmpty()) {
+                _ingestDrafts.value = saved.ingestDrafts.mapValues { it.value.toModel() }
+            }
+            if (saved.directorDraftsBySeq.isNotEmpty()) {
+                _directorDraftsBySeq.value = saved.directorDraftsBySeq.mapValues { it.value.toModel() }
+            }
+            if (saved.visionRatingsBySeq.isNotEmpty()) {
+                _visionRatingsBySeq.value = saved.visionRatingsBySeq
+            }
+            if (saved.visionNotesBySeq.isNotEmpty()) {
+                _visionNotesBySeq.value = saved.visionNotesBySeq
+            }
+            if (saved.selectedShotIndexBySeq.isNotEmpty()) {
+                _selectedShotIndexBySeq.value = saved.selectedShotIndexBySeq
+            }
+            if (saved.stage3DModeBySeq.isNotEmpty()) {
+                _stage3DModeBySeq.value = saved.stage3DModeBySeq
+            }
+            if (saved.agentFocusByProject.isNotEmpty()) {
+                _agentFocusByProject.value = saved.agentFocusByProject.mapValues { AgentRoleFocus.fromWire(it.value) }
+            }
+            if (saved.agentDraftByProject.isNotEmpty()) {
+                _agentDraftByProject.value = saved.agentDraftByProject
+            }
+        }
+    }
 
     private val projectsStream: StateFlow<UiState<List<ProductionProject>>> =
         repository.observeProjects(currentUserId)
@@ -214,8 +268,43 @@ class StudioViewModel(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
+    private val activeMilestonesStream: StateFlow<List<ProductionMilestoneItem>> =
+        _selectedProjectId.flatMapLatest { pid ->
+            if (pid.isBlank()) flowOf(emptyList())
+            else repository.observeMilestones(currentUserId, pid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    Log.w(TAG, "Error observing milestones", fsErr ?: error)
+                    emit(emptyList())
+                }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
+    private val activeStoryboardPathsStream: StateFlow<Map<String, String>> =
+        _selectedProjectId.flatMapLatest { pid ->
+            if (pid.isBlank()) flowOf(emptyMap())
+            else repository.observeStoryboardAssetPaths(currentUserId, pid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    Log.w(TAG, "Error observing storyboard assets", fsErr ?: error)
+                    emit(emptyMap())
+                }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyMap())
+
     private val userProfileStream: StateFlow<UserProfileState?> =
         repository.observeUserProfile(currentUserId)
+            .map { profile ->
+                if (profile != null && !isSavingConfig) {
+                    _studioConfig.value = profile.config
+                    _isDarkMode.value = profile.config.isDarkMode
+                }
+                profile
+            }
             .catch { error ->
                 val fsErr = generateSequence(error) { it.cause }
                     .filterIsInstance<FirebaseFirestoreException>()
@@ -240,43 +329,49 @@ class StudioViewModel(
         )
     }
 
+    private val navFlags = combine(
+        _showDashboard,
+        _showMetricsDashboard,
+        _showIngestSheet,
+        _showCalendarDialog,
+        busyFlags
+    ) { dash, metrics, ingest, cal, busy ->
+        ShellNavFlags(dash, metrics, ingest, cal, busy)
+    }
+
     private val navState = combine(
         _selectedProjectId,
         _selectedSequenceId,
         _activeTab,
-        _searchQuery
-    ) { pId, sId, tab, query ->
-        BasicNav(pId, sId, tab, query)
-    }.flatMapLatest { basic ->
-        combine(
-            _showDashboard,
-            _showMetricsDashboard,
-            _showIngestSheet,
-            _showCalendarDialog,
-            _isDarkMode,
-            busyFlags
-        ) { dash, metrics, ingest, cal, darkMode, busy ->
-            SelectionState(
-                selectedProjectId = basic.pId,
-                selectedSequenceId = basic.sId,
-                activeTab = basic.activeTab,
-                searchQuery = basic.query,
-                showDashboard = dash,
-                showMetricsDashboard = metrics,
-                showIngestSheet = ingest,
-                showCalendarDialog = cal,
-                isDarkMode = darkMode,
-                busy = busy
-            )
-        }
+        _searchQuery,
+        navFlags
+    ) { pId, sId, tab, query, flags ->
+        SelectionState(
+            selectedProjectId = pId,
+            selectedSequenceId = sId,
+            activeTab = tab,
+            searchQuery = query,
+            showDashboard = flags.showDashboard,
+            showMetricsDashboard = flags.showMetricsDashboard,
+            showIngestSheet = flags.showIngestSheet,
+            showCalendarDialog = flags.showCalendarDialog,
+            busy = flags.busy
+        )
     }
 
-    private data class BasicNav(
-        val pId: String,
-        val sId: String,
-        val activeTab: WorkspaceTab,
-        val query: String
-    )
+    private val extrasStream = combine(
+        _studioConfig,
+        _isDarkMode,
+        activeMilestonesStream,
+        activeStoryboardPathsStream
+    ) { config, isDark, milestones, persistedFrames ->
+        StudioExtrasState(
+            config = config,
+            isDarkMode = isDark,
+            milestones = milestones,
+            persistedFramePaths = persistedFrames
+        )
+    }
 
     private val bannersState = combine(
         _generatingFrameId,
@@ -320,13 +415,15 @@ class StudioViewModel(
         repoDataStream,
         navState,
         bannersState,
-        tabDraftsState
-    ) { repoData, sel, banners, drafts ->
+        tabDraftsState,
+        extrasStream
+    ) { repoData, sel, banners, drafts, extras ->
         when (val projResult = repoData.projectsResult) {
             is UiState.Loading -> UiState.Loading
             is UiState.Error -> UiState.Error(projResult.message)
             is UiState.Success -> {
                 val cachedMap = _sequencesByProject.value
+                val combinedFramePaths = extras.persistedFramePaths + banners.localFramePaths
                 val enrichedProjects = projResult.data.map { proj ->
                     val rawSeqs = if (proj.id == sel.selectedProjectId) {
                         if (repoData.activeSeqs.isNotEmpty()) repoData.activeSeqs else (cachedMap[proj.id] ?: emptyList())
@@ -336,7 +433,7 @@ class StudioViewModel(
                     val mergedSeqs = rawSeqs.map { seq ->
                         seq.copy(
                             storyboardFrames = seq.storyboardFrames.map { frame ->
-                                val overridePath = banners.localFramePaths[frame.id]
+                                val overridePath = combinedFramePaths[frame.id]
                                 if (!overridePath.isNullOrBlank()) frame.copy(localImagePath = overridePath) else frame
                             }
                         )
@@ -385,8 +482,8 @@ class StudioViewModel(
                 } ?: 0
 
                 val stage3D = activeSequence?.let { seq ->
-                    drafts.stage3DModeBySeq[seq.id] ?: true
-                } ?: true
+                    drafts.stage3DModeBySeq[seq.id] ?: extras.config.stage3DDefault
+                } ?: extras.config.stage3DDefault
 
                 val agentFocus = activeProject?.let { proj ->
                     drafts.agentFocusByProject[proj.id] ?: AgentRoleFocus.COUNCIL
@@ -426,8 +523,10 @@ class StudioViewModel(
                         isSavingToDb = sel.busy.savingToDb,
                         isExporting = sel.busy.exporting,
                         generatingFrameId = banners.generatingFrameId,
-                        isDarkMode = sel.isDarkMode,
+                        isDarkMode = extras.isDarkMode,
                         showCalendarDialog = sel.showCalendarDialog,
+                        milestones = extras.milestones,
+                        studioConfig = extras.config,
                         statusBanner = banners.statusBanner,
                         errorBanner = banners.errorBanner
                     )
@@ -437,16 +536,43 @@ class StudioViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
 
     private fun defaultIngestDraft(project: ProductionProject): IngestDraftState {
+        val cfg = _studioConfig.value
+        val fallbackStyle = cfg.preferredStyle.takeIf { it.isNotBlank() } ?: project.genreStyle
         val preset = StudioLogic.DIRECTOR_STYLES.firstOrNull {
             project.genreStyle.contains(it.label, ignoreCase = true)
+        } ?: StudioLogic.DIRECTOR_STYLES.firstOrNull {
+            fallbackStyle.contains(it.label, ignoreCase = true)
         } ?: StudioLogic.DIRECTOR_STYLES.first()
         return IngestDraftState(
             sourceType = project.defaultSourceType,
             directorStyle = preset.label,
-            aspectRatio = preset.defaultRatio,
+            aspectRatio = cfg.defaultAspectRatio.ifBlank { preset.defaultRatio },
+            thinkingDepth = ThinkingDepth.fromWire(cfg.defaultThinkingDepth),
             continuityBible = project.continuityBible,
             bibleInitialized = true
         )
+    }
+
+    private fun persistWorkspaceState() {
+        val autoSave = _studioConfig.value.autoSaveDrafts
+        val snapshot = LocalWorkspaceDraftSnapshot(
+            selectedProjectId = _selectedProjectId.value,
+            selectedSequenceId = _selectedSequenceId.value,
+            activeTab = _activeTab.value.routeKey,
+            searchQuery = _searchQuery.value,
+            showDashboard = _showDashboard.value,
+            ingestDrafts = if (autoSave) _ingestDrafts.value.mapValues { PersistedIngestDraft.fromModel(it.value) } else emptyMap(),
+            directorDraftsBySeq = if (autoSave) _directorDraftsBySeq.value.mapValues { PersistedDirectorDraft.fromModel(it.value) } else emptyMap(),
+            visionRatingsBySeq = if (autoSave) _visionRatingsBySeq.value else emptyMap(),
+            visionNotesBySeq = if (autoSave) _visionNotesBySeq.value else emptyMap(),
+            selectedShotIndexBySeq = _selectedShotIndexBySeq.value,
+            stage3DModeBySeq = _stage3DModeBySeq.value,
+            agentFocusByProject = _agentFocusByProject.value.mapValues { it.value.wireValue },
+            agentDraftByProject = if (autoSave) _agentDraftByProject.value else emptyMap()
+        )
+        viewModelScope.launch {
+            repository.saveWorkspaceDrafts(currentUserId, snapshot)
+        }
     }
 
     private fun defaultDirectorDraft(
@@ -469,6 +595,7 @@ class StudioViewModel(
         if (show) {
             _showMetricsDashboard.value = false
         }
+        persistWorkspaceState()
     }
 
     fun setShowMetricsDashboard(show: Boolean) {
@@ -480,26 +607,120 @@ class StudioViewModel(
     }
 
     fun toggleDarkMode() {
-        _isDarkMode.value = !_isDarkMode.value
+        val nextDark = !_isDarkMode.value
+        _isDarkMode.value = nextDark
+        val nextConfig = _studioConfig.value.copy(
+            themeMode = if (nextDark) "dark" else "light"
+        )
+        _studioConfig.value = nextConfig
+        isSavingConfig = true
+        viewModelScope.launch {
+            try {
+                repository.updateUserStudioConfig(currentUserId, nextConfig)
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                isSavingConfig = false
+            }
+        }
+    }
+
+    fun updateStudioConfig(config: UserStudioConfig) {
+        val normalized = config.copy(
+            themeMode = if (config.themeMode.equals("light", ignoreCase = true)) "light" else "dark",
+            preferredStyle = config.preferredStyle.trim().ifBlank { StudioLogic.DIRECTOR_STYLES.first().label }
+        )
+        _studioConfig.value = normalized
+        _isDarkMode.value = normalized.isDarkMode
+        isSavingConfig = true
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateUserStudioConfig(currentUserId, normalized)
+                    .onSuccess {
+                        _statusBanner.value = "Configuración y preferencias guardadas."
+                    }
+                    .onFailure { err ->
+                        _errorBanner.value = friendlyFirestoreMessage(err)
+                    }
+            } finally {
+                isSavingConfig = false
+                _isSavingToDb.value = false
+            }
+        }
     }
 
     fun setShowCalendarDialog(show: Boolean) {
         _showCalendarDialog.value = show
     }
 
+    fun addMilestone(
+        projectId: String,
+        title: String,
+        notes: String,
+        dateMillis: Long,
+        type: CalendarMilestoneType,
+        sequenceId: String? = null
+    ) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.createMilestone(
+                    userId = currentUserId,
+                    projectId = projectId,
+                    title = title,
+                    notes = notes,
+                    dateMillis = dateMillis,
+                    type = type,
+                    sequenceId = sequenceId
+                ).onSuccess { created ->
+                    _statusBanner.value = "Hito «${created.title}» guardado en el calendario."
+                }.onFailure { err ->
+                    _errorBanner.value = friendlyFirestoreMessage(err)
+                }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun toggleMilestoneCompleted(projectId: String, milestoneId: String, completed: Boolean) {
+        viewModelScope.launch {
+            _errorBanner.value = null
+            repository.toggleMilestoneCompleted(currentUserId, projectId, milestoneId, completed)
+                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+        }
+    }
+
+    fun deleteMilestone(projectId: String, milestoneId: String) {
+        viewModelScope.launch {
+            _errorBanner.value = null
+            repository.deleteMilestone(currentUserId, projectId, milestoneId)
+                .onSuccess { _statusBanner.value = "Hito eliminado del calendario." }
+                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+        }
+    }
+
     fun updatePreferredStyle(style: String) {
+        val nextConfig = _studioConfig.value.copy(preferredStyle = style.trim())
+        _studioConfig.value = nextConfig
+        isSavingConfig = true
         viewModelScope.launch {
             _isSavingToDb.value = true
             _errorBanner.value = null
             try {
                 repository.updateUserPreferredStyle(currentUserId, style)
                     .onSuccess {
-                        _statusBanner.value = "Perfil cinematográfico actualizado en la nube."
+                        _statusBanner.value = "Perfil cinematográfico actualizado."
                     }
                     .onFailure { err ->
                         _errorBanner.value = friendlyFirestoreMessage(err)
                     }
             } finally {
+                isSavingConfig = false
                 _isSavingToDb.value = false
             }
         }
@@ -509,18 +730,31 @@ class StudioViewModel(
         _selectedProjectId.value = projectId
         _selectedSequenceId.value = ""
         _latestAudioReport.value = null
+        val nextConfig = _studioConfig.value.copy(lastProjectId = projectId, lastSequenceId = "")
+        _studioConfig.value = nextConfig
+        persistWorkspaceState()
+        viewModelScope.launch { repository.updateUserStudioConfig(currentUserId, nextConfig) }
     }
 
     fun selectSequence(sequenceId: String) {
         _selectedSequenceId.value = sequenceId
+        val nextConfig = _studioConfig.value.copy(lastSequenceId = sequenceId)
+        _studioConfig.value = nextConfig
+        persistWorkspaceState()
+        viewModelScope.launch { repository.updateUserStudioConfig(currentUserId, nextConfig) }
     }
 
     fun selectTab(tab: WorkspaceTab) {
         _activeTab.value = tab
+        val nextConfig = _studioConfig.value.copy(lastTab = tab.routeKey)
+        _studioConfig.value = nextConfig
+        persistWorkspaceState()
+        viewModelScope.launch { repository.updateUserStudioConfig(currentUserId, nextConfig) }
     }
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
+        persistWorkspaceState()
     }
 
     fun clearBanners() {
@@ -536,6 +770,7 @@ class StudioViewModel(
             val current = map[project.id] ?: defaultIngestDraft(project)
             map + (project.id to transform(current))
         }
+        persistWorkspaceState()
     }
 
     fun updateDirectorDraft(
@@ -547,6 +782,7 @@ class StudioViewModel(
             val current = map[sequence.id] ?: defaultDirectorDraft(project, sequence)
             map + (sequence.id to transform(current).copy(isDirty = true))
         }
+        persistWorkspaceState()
     }
 
     fun saveDirectorDraftEdits(
@@ -580,6 +816,7 @@ class StudioViewModel(
                     repository.updateDraftSequence(currentUserId, project.id, updatedSeq)
                         .onSuccess {
                             _directorDraftsBySeq.update { it - sequence.id }
+                            persistWorkspaceState()
                             _statusBanner.value = "Ajustes de dirección guardados en «${sequence.title}»."
                         }
                         .onFailure { err ->
@@ -587,6 +824,7 @@ class StudioViewModel(
                         }
                 } else {
                     _directorDraftsBySeq.update { it - sequence.id }
+                    persistWorkspaceState()
                     _statusBanner.value = "Biblia de continuidad actualizada (la secuencia Final es inmutable)."
                 }
             } finally {
@@ -597,26 +835,32 @@ class StudioViewModel(
 
     fun updateVisionRatingDraft(sequenceId: String, rating: Int) {
         _visionRatingsBySeq.update { it + (sequenceId to rating.coerceIn(1, 5)) }
+        persistWorkspaceState()
     }
 
     fun updateVisionNoteDraft(sequenceId: String, note: String) {
         _visionNotesBySeq.update { it + (sequenceId to note) }
+        persistWorkspaceState()
     }
 
     fun updateSelectedShotIndex(sequenceId: String, index: Int) {
         _selectedShotIndexBySeq.update { it + (sequenceId to index.coerceAtLeast(0)) }
+        persistWorkspaceState()
     }
 
     fun updateStage3DMode(sequenceId: String, use3D: Boolean) {
         _stage3DModeBySeq.update { it + (sequenceId to use3D) }
+        persistWorkspaceState()
     }
 
     fun updateAgentFocus(projectId: String, focus: AgentRoleFocus) {
         _agentFocusByProject.update { it + (projectId to focus) }
+        persistWorkspaceState()
     }
 
     fun updateAgentDraftMessage(projectId: String, text: String) {
         _agentDraftByProject.update { it + (projectId to text) }
+        persistWorkspaceState()
     }
 
     fun createProject(
@@ -1387,8 +1631,14 @@ class StudioViewModel(
         val showMetricsDashboard: Boolean,
         val showIngestSheet: Boolean,
         val showCalendarDialog: Boolean,
-        val isDarkMode: Boolean,
         val busy: BusyState
+    )
+
+    private data class StudioExtrasState(
+        val config: UserStudioConfig,
+        val isDarkMode: Boolean,
+        val milestones: List<ProductionMilestoneItem>,
+        val persistedFramePaths: Map<String, String>
     )
 
     private data class BannerState(

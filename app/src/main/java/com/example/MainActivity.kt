@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.StudioRepository
 import com.example.security.configureAppCheck
@@ -37,13 +38,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            LumenReelTheme {
-                LumenReelRoot(
-                    onShareFile = { file, mimeType ->
-                        shareExportedFile(file, mimeType)
-                    }
-                )
-            }
+            LumenReelRoot(
+                onShareFile = { file, mimeType ->
+                    shareExportedFile(file, mimeType)
+                }
+            )
         }
     }
 
@@ -82,6 +81,8 @@ private fun LumenReelRoot(
     val authRepository = remember {
         AuthRepository(studioRepository)
     }
+    val isDarkMode by studioRepository.observeGlobalThemeDark()
+        .collectAsStateWithLifecycle(initialValue = studioRepository.getCachedThemeDark())
 
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
     var authStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -111,41 +112,43 @@ private fun LumenReelRoot(
         }
     }
 
-    val user = currentUser
-    if (user == null) {
-        AuthScreen(
-            authRepository = authRepository,
-            onSignedIn = {
-                currentUser = Firebase.auth.currentUser
-            }
-        )
-    } else {
-        key(user.uid) {
-            MainStudioScreen(
-                currentUser = user,
-                authStatusMessage = authStatusMessage,
-                onClearAuthStatus = { authStatusMessage = null },
-                onOptionalGoogleSignIn = {
-                    scope.launch {
-                        authStatusMessage = null
-                        authRepository.signInInteractive(context)
-                            .onSuccess {
-                                currentUser = Firebase.auth.currentUser
-                            }
-                            .onFailure { err ->
-                                authStatusMessage = err.localizedMessage
-                                    ?: "No se pudo conectar la cuenta de Google."
-                            }
-                    }
-                },
-                onSignOut = {
-                    scope.launch {
-                        authRepository.signOut(context)
-                        currentUser = Firebase.auth.currentUser
-                    }
-                },
-                onShareFile = onShareFile
+    LumenReelTheme(darkTheme = isDarkMode) {
+        val user = currentUser
+        if (user == null) {
+            AuthScreen(
+                authRepository = authRepository,
+                onSignedIn = {
+                    currentUser = Firebase.auth.currentUser
+                }
             )
+        } else {
+            key(user.uid) {
+                MainStudioScreen(
+                    currentUser = user,
+                    authStatusMessage = authStatusMessage,
+                    onClearAuthStatus = { authStatusMessage = null },
+                    onOptionalGoogleSignIn = {
+                        scope.launch {
+                            authStatusMessage = null
+                            authRepository.signInInteractive(context)
+                                .onSuccess {
+                                    currentUser = Firebase.auth.currentUser
+                                }
+                                .onFailure { err ->
+                                    authStatusMessage = err.localizedMessage
+                                        ?: "No se pudo conectar la cuenta de Google."
+                                }
+                        }
+                    },
+                    onSignOut = {
+                        scope.launch {
+                            authRepository.signOut(context)
+                            currentUser = Firebase.auth.currentUser
+                        }
+                    },
+                    onShareFile = onShareFile
+                )
+            }
         }
     }
 }

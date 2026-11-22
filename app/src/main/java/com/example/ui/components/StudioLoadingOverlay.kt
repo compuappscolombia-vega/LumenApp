@@ -38,12 +38,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.WarmSilver
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -60,6 +54,11 @@ fun StudioLoadingOverlay(
         exit = fadeOut(animationSpec = tween(180)),
         modifier = modifier
     ) {
+        val colors = MaterialTheme.colorScheme
+        val primaryColor = colors.primary
+        val secondaryColor = colors.secondary
+        val onSurfaceColor = colors.onSurface
+
         val transition = rememberInfiniteTransition(label = "lumenreel_global_loader")
         val reelAngle by transition.animateFloat(
             initialValue = 0f,
@@ -92,7 +91,7 @@ fun StudioLoadingOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.72f))
+                .background(Color.Black.copy(alpha = 0.65f))
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -105,12 +104,12 @@ fun StudioLoadingOverlay(
             contentAlignment = Alignment.Center
         ) {
             Surface(
-                color = StudioCard,
+                color = colors.surface,
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
                     .widthIn(max = 360.dp)
-                    .border(1.dp, StudioBorder, RoundedCornerShape(20.dp))
+                    .border(1.dp, colors.outline, RoundedCornerShape(20.dp))
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
@@ -122,9 +121,8 @@ fun StudioLoadingOverlay(
                         val outerRadius = size.minDimension * 0.44f
                         val innerRadius = size.minDimension * 0.25f
 
-                        // Outer sweeping amber arc
                         drawArc(
-                            color = AmberGold.copy(alpha = 0.22f),
+                            color = primaryColor.copy(alpha = 0.22f),
                             startAngle = 0f,
                             sweepAngle = 360f,
                             useCenter = false,
@@ -133,7 +131,7 @@ fun StudioLoadingOverlay(
                             style = Stroke(width = 3.5.dp.toPx())
                         )
                         drawArc(
-                            color = AmberGold,
+                            color = primaryColor,
                             startAngle = reelAngle,
                             sweepAngle = 110f,
                             useCenter = false,
@@ -142,7 +140,7 @@ fun StudioLoadingOverlay(
                             style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
                         )
                         drawArc(
-                            color = TealAtmos.copy(alpha = pulseAlpha),
+                            color = secondaryColor.copy(alpha = pulseAlpha),
                             startAngle = counterAngle,
                             sweepAngle = 75f,
                             useCenter = false,
@@ -151,10 +149,9 @@ fun StudioLoadingOverlay(
                             style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round)
                         )
 
-                        // Rotating film reel sprockets
                         rotate(degrees = reelAngle, pivot = center) {
                             drawCircle(
-                                color = IvoryPrimary.copy(alpha = 0.85f),
+                                color = onSurfaceColor.copy(alpha = 0.85f),
                                 radius = innerRadius,
                                 center = center,
                                 style = Stroke(width = 2.dp.toPx())
@@ -165,13 +162,13 @@ fun StudioLoadingOverlay(
                                 val hx = center.x + (cos(rad) * holeOrbit).toFloat()
                                 val hy = center.y + (sin(rad) * holeOrbit).toFloat()
                                 drawCircle(
-                                    color = AmberGold.copy(alpha = 0.9f),
+                                    color = primaryColor.copy(alpha = 0.9f),
                                     radius = 3.2.dp.toPx(),
                                     center = Offset(hx, hy)
                                 )
                             }
                             drawCircle(
-                                color = TealAtmos.copy(alpha = pulseAlpha),
+                                color = secondaryColor.copy(alpha = pulseAlpha),
                                 radius = 3.8.dp.toPx(),
                                 center = center
                             )
@@ -181,7 +178,7 @@ fun StudioLoadingOverlay(
                     Text(
                         text = headline,
                         style = MaterialTheme.typography.titleMedium,
-                        color = IvoryPrimary,
+                        color = colors.onSurface,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.testTag("global_loading_headline")
@@ -189,7 +186,7 @@ fun StudioLoadingOverlay(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = WarmSilver,
+                        color = colors.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.testTag("global_loading_subtitle")
                     )

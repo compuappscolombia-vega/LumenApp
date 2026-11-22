@@ -23,7 +23,12 @@ enum class WorkspaceTab(val routeKey: String) {
     VISION("vision"),
     SHOTS("shots"),
     SCREENPLAY("screenplay"),
-    STORYBOARD("storyboard")
+    STORYBOARD("storyboard");
+
+    companion object {
+        fun fromRouteKey(raw: String?): WorkspaceTab =
+            entries.firstOrNull { it.routeKey == raw?.lowercase() } ?: AGENT
+    }
 }
 
 enum class AgentRoleFocus(val wireValue: String) {
@@ -48,9 +53,14 @@ enum class SequenceVersionStatus(val wireValue: String) {
     }
 }
 
-enum class ThinkingDepth {
-    STANDARD,
-    DEEP
+enum class ThinkingDepth(val label: String) {
+    STANDARD("Estándar"),
+    DEEP("Profundo");
+
+    companion object {
+        fun fromWire(raw: String?): ThinkingDepth =
+            entries.firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: STANDARD
+    }
 }
 
 enum class LearningCategory(val wireValue: String) {
@@ -612,4 +622,63 @@ data class DirectorDraftEdits(
     val continuityBible: String = "",
     val isDirty: Boolean = false
 )
+
+enum class CalendarMilestoneType(val wireValue: String, val displayLabel: String) {
+    SHOOTING_DAY("shooting_day", "Día de rodaje"),
+    DEADLINE("deadline", "Fecha límite"),
+    REVIEW("review", "Revisión técnica"),
+    PREMIERE("premiere", "Entrega / Estreno");
+
+    companion object {
+        fun fromWire(raw: String?): CalendarMilestoneType =
+            entries.firstOrNull { it.wireValue == raw?.lowercase() } ?: SHOOTING_DAY
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+@Serializable
+data class ProductionMilestoneItem(
+    val id: String = "",
+    val projectId: String = "",
+    val ownerId: String = "",
+    val title: String = "",
+    val notes: String = "",
+    val dateMillis: Long = 0L,
+    val milestoneType: String = CalendarMilestoneType.SHOOTING_DAY.wireValue,
+    val sequenceId: String? = null,
+    val completed: Boolean = false,
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
+) {
+    fun resolvedType(): CalendarMilestoneType = CalendarMilestoneType.fromWire(milestoneType)
+}
+
+@Keep
+@IgnoreExtraProperties
+@Serializable
+data class StoryboardAssetOverride(
+    val id: String = "",
+    val projectId: String = "",
+    val sequenceId: String = "",
+    val frameId: String = "",
+    val localImagePath: String = "",
+    val updatedAtMillis: Long = 0L
+)
+
+@Serializable
+data class UserStudioConfig(
+    val themeMode: String = "dark",
+    val preferredStyle: String = "Épica Monumental IMAX",
+    val defaultAspectRatio: String = "2.39:1",
+    val defaultThinkingDepth: String = "STANDARD",
+    val autoSaveDrafts: Boolean = true,
+    val stage3DDefault: Boolean = true,
+    val lastProjectId: String = "",
+    val lastSequenceId: String = "",
+    val lastTab: String = "agent"
+) {
+    val isDarkMode: Boolean get() = themeMode != "light"
+}
+
 

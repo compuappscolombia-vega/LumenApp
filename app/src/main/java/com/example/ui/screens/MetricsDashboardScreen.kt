@@ -68,16 +68,6 @@ import com.example.data.util.ProjectActivityPoint
 import com.example.data.util.ProjectSequenceBarItem
 import com.example.data.util.SequenceScriptMetric
 import com.example.data.util.StudioMetricsCalculator
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurface
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.WarmSilver
 import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,18 +79,19 @@ fun MetricsDashboardScreen(
 ) {
     BackHandler(onBack = onBack)
 
+    val colors = MaterialTheme.colorScheme
     val report = remember(projects) { StudioMetricsCalculator.computeMetrics(projects) }
 
     Scaffold(
         modifier = modifier
             .fillMaxSize()
             .testTag("metrics_dashboard_screen"),
-        containerColor = ObsidianBg,
+        containerColor = colors.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = StudioSurface,
-                    titleContentColor = IvoryPrimary
+                    containerColor = colors.surface,
+                    titleContentColor = colors.onSurface
                 ),
                 navigationIcon = {
                     IconButton(
@@ -112,7 +103,7 @@ fun MetricsDashboardScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Volver a Producciones",
-                            tint = IvoryPrimary
+                            tint = colors.onSurface
                         )
                     }
                 },
@@ -128,20 +119,20 @@ fun MetricsDashboardScreen(
                             modifier = Modifier
                                 .size(34.dp)
                                 .clip(RoundedCornerShape(9.dp))
-                                .border(1.dp, AmberGold.copy(alpha = 0.65f), RoundedCornerShape(9.dp))
+                                .border(1.dp, colors.primary.copy(alpha = 0.65f), RoundedCornerShape(9.dp))
                         )
                         Column {
                             Text(
                                 text = "Analítica del Estudio",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = IvoryPrimary,
+                                color = colors.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "Secuencias, extensión de guion y actividad",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = AmberGold,
+                                color = colors.primary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -156,7 +147,7 @@ fun MetricsDashboardScreen(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xFF0E0E13), ObsidianBg, Color(0xFF12100C))
+                        listOf(colors.surfaceVariant.copy(alpha = 0.45f), colors.background, colors.background)
                     )
                 )
                 .padding(innerPadding)
@@ -170,7 +161,6 @@ fun MetricsDashboardScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // KPI Summary Row
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -180,7 +170,7 @@ fun MetricsDashboardScreen(
                             title = "Secuencias",
                             primaryValue = report.totalSequences.toString(),
                             subtitle = "${report.finalSequences} final · ${report.draftSequences} borrador",
-                            accent = AmberGold,
+                            accent = colors.primary,
                             icon = Icons.Rounded.Movie,
                             modifier = Modifier
                                 .weight(1f)
@@ -190,7 +180,7 @@ fun MetricsDashboardScreen(
                             title = "Guion Total",
                             primaryValue = "${report.totalScriptWords}",
                             subtitle = "${report.totalScenes} esc · ${report.totalBeats} beats · ~${report.estimatedMinutes}m",
-                            accent = TealAtmos,
+                            accent = colors.secondary,
                             icon = Icons.Rounded.Description,
                             modifier = Modifier
                                 .weight(1f)
@@ -208,7 +198,6 @@ fun MetricsDashboardScreen(
                     )
                 }
 
-                // Chart 1: Total Generated Sequences by Project (Draft vs Final)
                 item {
                     SequenceDistributionChartCard(
                         items = report.projectBars,
@@ -216,7 +205,6 @@ fun MetricsDashboardScreen(
                     )
                 }
 
-                // Chart 2: Script Length per Sequence
                 item {
                     ScriptLengthChartCard(
                         items = report.scriptLengthBySequence,
@@ -225,7 +213,6 @@ fun MetricsDashboardScreen(
                     )
                 }
 
-                // Chart 3: Project Activity Over Time
                 item {
                     ActivityTimelineChartCard(
                         points = report.activityTimeline,
@@ -246,10 +233,11 @@ private fun MetricsKpiCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
-        modifier = modifier.border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+        modifier = modifier.border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -260,7 +248,7 @@ private fun MetricsKpiCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
-                Text(title, style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text(title, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
             Text(
                 text = primaryValue,
@@ -271,7 +259,7 @@ private fun MetricsKpiCard(
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.labelSmall,
-                color = MutedStone,
+                color = colors.onSurfaceVariant.copy(alpha = 0.8f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -286,12 +274,13 @@ private fun MetricsKpiWideBanner(
     activityPointsCount: Int,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = StudioDeepPanel,
+        color = colors.surfaceVariant,
         shape = RoundedCornerShape(14.dp),
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Row(
             modifier = Modifier
@@ -305,17 +294,17 @@ private fun MetricsKpiWideBanner(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Rounded.Insights, contentDescription = null, tint = AmberGold, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.Insights, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
                 Column {
                     Text(
                         text = "$totalProjects producciones activas · $activityPointsCount hitos registrados",
                         style = MaterialTheme.typography.labelLarge,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                     Text(
                         text = "Promedio de guion: $avgWords palabras por secuencia",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant
                     )
                 }
             }
@@ -328,15 +317,19 @@ private fun SequenceDistributionChartCard(
     items: List<ProjectSequenceBarItem>,
     totalSequences: Int
 ) {
+    val colors = MaterialTheme.colorScheme
+    val primaryColor = colors.primary
+    val secondaryColor = colors.secondary
+    val onSurfaceColor = colors.onSurface
     val shown = remember(items) { items.take(6) }
     val maxTotal = remember(shown) { (shown.maxOfOrNull { it.totalCount } ?: 1).coerceAtLeast(1) }
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -351,17 +344,17 @@ private fun SequenceDistributionChartCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.AutoGraph, contentDescription = null, tint = AmberGold, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.AutoGraph, contentDescription = null, tint = primaryColor, modifier = Modifier.size(18.dp))
                     Text(
                         text = "Secuencias Generadas por Producción",
                         style = MaterialTheme.typography.titleSmall,
-                        color = AmberGold
+                        color = primaryColor
                     )
                 }
                 Text(
                     text = "$totalSequences total",
                     style = MaterialTheme.typography.labelSmall,
-                    color = WarmSilver
+                    color = colors.onSurfaceVariant
                 )
             }
 
@@ -371,8 +364,8 @@ private fun SequenceDistributionChartCard(
                 )
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    LegendDot(color = AmberGold, label = "Borrador")
-                    LegendDot(color = TealAtmos, label = "Versión Final")
+                    LegendDot(color = primaryColor, label = "Borrador")
+                    LegendDot(color = secondaryColor, label = "Versión Final")
                 }
 
                 Box(
@@ -391,17 +384,16 @@ private fun SequenceDistributionChartCard(
                         val chartTop = 10.dp.toPx()
                         val usableH = (chartBottom - chartTop).coerceAtLeast(24f)
 
-                        // Baseline & midpoint guide lines
                         val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
                         drawLine(
-                            color = Color.White.copy(alpha = 0.08f),
+                            color = onSurfaceColor.copy(alpha = 0.10f),
                             start = Offset(0f, chartTop + usableH * 0.5f),
                             end = Offset(size.width, chartTop + usableH * 0.5f),
                             strokeWidth = 1f,
                             pathEffect = dash
                         )
                         drawLine(
-                            color = Color.White.copy(alpha = 0.16f),
+                            color = onSurfaceColor.copy(alpha = 0.20f),
                             start = Offset(0f, chartBottom),
                             end = Offset(size.width, chartBottom),
                             strokeWidth = 1.2f
@@ -417,7 +409,7 @@ private fun SequenceDistributionChartCard(
 
                             if (totalH <= 0f) {
                                 drawRoundRect(
-                                    color = Color.White.copy(alpha = 0.08f),
+                                    color = onSurfaceColor.copy(alpha = 0.10f),
                                     topLeft = Offset(cx, chartBottom - 4.dp.toPx()),
                                     size = Size(barW, 4.dp.toPx()),
                                     cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
@@ -425,7 +417,7 @@ private fun SequenceDistributionChartCard(
                             } else {
                                 if (draftH > 0f) {
                                     drawRoundRect(
-                                        color = AmberGold,
+                                        color = primaryColor,
                                         topLeft = Offset(cx, chartBottom - totalH),
                                         size = Size(barW, draftH),
                                         cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
@@ -433,7 +425,7 @@ private fun SequenceDistributionChartCard(
                                 }
                                 if (finalH > 0f) {
                                     drawRoundRect(
-                                        color = TealAtmos,
+                                        color = secondaryColor,
                                         topLeft = Offset(cx, chartBottom - finalH),
                                         size = Size(barW, finalH),
                                         cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
@@ -456,13 +448,13 @@ private fun SequenceDistributionChartCard(
                             Text(
                                 text = item.totalCount.toString(),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = IvoryPrimary,
+                                color = colors.onSurface,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = item.projectTitle,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedStone,
+                                color = colors.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -480,17 +472,21 @@ private fun ScriptLengthChartCard(
     totalWords: Int,
     totalScenes: Int
 ) {
+    val colors = MaterialTheme.colorScheme
+    val primaryColor = colors.primary
+    val secondaryColor = colors.secondary
+    val onSurfaceColor = colors.onSurface
     val topItems = remember(items) { items.take(6) }
     val maxScale = remember(topItems) {
         (topItems.maxOfOrNull { max(it.wordsCount, it.beatsCount * 12) } ?: 1).coerceAtLeast(1)
     }
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -505,17 +501,17 @@ private fun ScriptLengthChartCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.Description, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Description, contentDescription = null, tint = secondaryColor, modifier = Modifier.size(18.dp))
                     Text(
                         text = "Extensión de Guion por Secuencia",
                         style = MaterialTheme.typography.titleSmall,
-                        color = TealAtmos
+                        color = secondaryColor
                     )
                 }
                 Text(
                     text = "$totalWords pal · $totalScenes esc",
                     style = MaterialTheme.typography.labelSmall,
-                    color = WarmSilver
+                    color = colors.onSurfaceVariant
                 )
             }
 
@@ -536,7 +532,7 @@ private fun ScriptLengthChartCard(
                                 Text(
                                     text = "${metric.sequenceTitle} · ${metric.projectTitle}",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = IvoryPrimary,
+                                    color = colors.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
@@ -545,7 +541,7 @@ private fun ScriptLengthChartCard(
                                 Text(
                                     text = "${metric.wordsCount} pal · ${metric.scenesCount} esc · ${metric.beatsCount} beats",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = TealAtmos
+                                    color = secondaryColor
                                 )
                             }
                             Canvas(
@@ -554,12 +550,12 @@ private fun ScriptLengthChartCard(
                                     .height(10.dp)
                             ) {
                                 drawRoundRect(
-                                    color = Color.White.copy(alpha = 0.08f),
+                                    color = onSurfaceColor.copy(alpha = 0.10f),
                                     size = size,
                                     cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
                                 )
                                 drawRoundRect(
-                                    brush = Brush.horizontalGradient(listOf(TealAtmos, AmberGold)),
+                                    brush = Brush.horizontalGradient(listOf(secondaryColor, primaryColor)),
                                     size = Size(size.width * ratio, size.height),
                                     cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
                                 )
@@ -577,14 +573,19 @@ private fun ActivityTimelineChartCard(
     points: List<ProjectActivityPoint>,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
+    val primaryColor = colors.primary
+    val secondaryColor = colors.secondary
+    val onSurfaceColor = colors.onSurface
+    val surfaceColor = colors.surface
     val maxEvents = remember(points) { (points.maxOfOrNull { it.totalEvents } ?: 1).coerceAtLeast(1) }
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -599,17 +600,17 @@ private fun ActivityTimelineChartCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.Timeline, contentDescription = null, tint = AmberGold, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Timeline, contentDescription = null, tint = primaryColor, modifier = Modifier.size(18.dp))
                     Text(
                         text = "Actividad de Proyectos en el Tiempo",
                         style = MaterialTheme.typography.titleSmall,
-                        color = AmberGold
+                        color = primaryColor
                     )
                 }
                 Text(
                     text = "${points.sumOf { it.totalEvents }} eventos",
                     style = MaterialTheme.typography.labelSmall,
-                    color = WarmSilver
+                    color = colors.onSurfaceVariant
                 )
             }
 
@@ -619,8 +620,8 @@ private fun ActivityTimelineChartCard(
                 )
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    LegendDot(color = AmberGold, label = "Creaciones + ediciones")
-                    LegendDot(color = TealAtmos, label = "Hitos de guardado")
+                    LegendDot(color = primaryColor, label = "Creaciones + ediciones")
+                    LegendDot(color = secondaryColor, label = "Hitos de guardado")
                 }
 
                 Box(
@@ -638,12 +639,11 @@ private fun ActivityTimelineChartCard(
                         val plotW = (size.width - padX * 2f).coerceAtLeast(24f)
                         val plotH = (size.height - padTop - padBottom).coerceAtLeast(24f)
 
-                        // Horizontal dashed grid
                         val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
                         listOf(0f, 0.5f, 1f).forEach { frac ->
                             val gy = padTop + plotH * frac
                             drawLine(
-                                color = Color.White.copy(alpha = 0.10f),
+                                color = onSurfaceColor.copy(alpha = 0.12f),
                                 start = Offset(padX, gy),
                                 end = Offset(padX + plotW, gy),
                                 strokeWidth = 1f,
@@ -672,7 +672,7 @@ private fun ActivityTimelineChartCard(
                             drawPath(
                                 path = areaPath,
                                 brush = Brush.verticalGradient(
-                                    listOf(AmberGold.copy(alpha = 0.30f), Color.Transparent)
+                                    listOf(primaryColor.copy(alpha = 0.30f), Color.Transparent)
                                 )
                             )
 
@@ -683,19 +683,19 @@ private fun ActivityTimelineChartCard(
                             }
                             drawPath(
                                 path = linePath,
-                                color = AmberGold,
+                                color = primaryColor,
                                 style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round)
                             )
                         }
 
                         coords.forEach { pt ->
                             drawCircle(
-                                color = ObsidianBg,
+                                color = surfaceColor,
                                 radius = 6.dp.toPx(),
                                 center = pt
                             )
                             drawCircle(
-                                color = TealAtmos,
+                                color = secondaryColor,
                                 radius = 4.2.dp.toPx(),
                                 center = pt
                             )
@@ -715,13 +715,13 @@ private fun ActivityTimelineChartCard(
                             Text(
                                 text = "${pt.totalEvents}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = IvoryPrimary,
+                                color = colors.onSurface,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = pt.label,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedStone,
+                                color = colors.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -745,23 +745,24 @@ private fun LegendDot(color: Color, label: String) {
                 .clip(RoundedCornerShape(3.dp))
                 .background(color)
         )
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = WarmSilver)
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun MetricsEmptyState(message: String) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = StudioDeepPanel,
+        color = colors.surfaceVariant,
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
     ) {
         Text(
             text = message,
             style = MaterialTheme.typography.bodySmall,
-            color = MutedStone,
+            color = colors.onSurfaceVariant,
             modifier = Modifier.padding(14.dp)
         )
     }

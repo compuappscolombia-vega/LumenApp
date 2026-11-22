@@ -66,17 +66,6 @@ import com.example.data.model.StudioIntelligenceReport
 import com.example.data.util.StudioLogic
 import com.example.ui.components.ProductionRadarChartCard
 import com.example.ui.components.readClipboardText
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 
 @Composable
 fun VisionTabView(
@@ -95,6 +84,7 @@ fun VisionTabView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     var copiedHex by remember { mutableStateOf<String?>(null) }
     val isDraft = sequence.versionStatus == SequenceVersionStatus.DRAFT
 
@@ -108,16 +98,16 @@ fun VisionTabView(
             SectionCard(title = "Visión del Director & Logline") {
                 if (sequence.logline.isNotBlank()) {
                     Surface(
-                        color = AmberContainer,
+                        color = colors.primaryContainer,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, AmberGold.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                            .border(1.dp, colors.primary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                     ) {
                         Text(
                             text = "«${sequence.logline}»",
                             style = MaterialTheme.typography.titleMedium,
-                            color = IvoryPrimary,
+                            color = colors.onPrimaryContainer,
                             modifier = Modifier.padding(12.dp)
                         )
                     }
@@ -126,7 +116,7 @@ fun VisionTabView(
                     text = directorDraft.directorVision.ifBlank { sequence.directorVision }
                         .ifBlank { "Sin notas de visión registradas." },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = WarmSilver
+                    color = colors.onSurfaceVariant
                 )
             }
         }
@@ -149,18 +139,18 @@ fun VisionTabView(
                             "Secuencia en Versión Final (solo lectura técnica). Puedes actualizar la Biblia de Continuidad."
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone,
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f),
                         modifier = Modifier.weight(1f)
                     )
                     if (directorDraft.isDirty) {
                         Surface(
-                            color = AmberContainer,
+                            color = colors.primaryContainer,
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
                                 text = "Editado",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = AmberGold,
+                                color = colors.onPrimaryContainer,
                                 modifier = Modifier
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                                     .testTag("director_dirty_badge")
@@ -169,7 +159,7 @@ fun VisionTabView(
                     }
                 }
 
-                Text("Firma de dirección", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text("Firma de dirección", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -192,17 +182,17 @@ fun VisionTabView(
                             },
                             label = { Text(preset.label, style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AmberContainer,
-                                selectedLabelColor = AmberGold,
-                                containerColor = StudioDeepPanel,
-                                labelColor = WarmSilver
+                                selectedContainerColor = colors.primaryContainer,
+                                selectedLabelColor = colors.onPrimaryContainer,
+                                containerColor = colors.surfaceVariant,
+                                labelColor = colors.onSurfaceVariant
                             ),
                             modifier = Modifier.testTag("vision_style_${preset.id}")
                         )
                     }
                 }
 
-                Text("Relación de aspecto", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text("Relación de aspecto", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -216,10 +206,10 @@ fun VisionTabView(
                             onClick = { onDirectorDraftChange { it.copy(aspectRatio = ratio) } },
                             label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AmberContainer,
-                                selectedLabelColor = AmberGold,
-                                containerColor = StudioDeepPanel,
-                                labelColor = WarmSilver
+                                selectedContainerColor = colors.primaryContainer,
+                                selectedLabelColor = colors.onPrimaryContainer,
+                                containerColor = colors.surfaceVariant,
+                                labelColor = colors.onSurfaceVariant
                             ),
                             modifier = Modifier.testTag("vision_ratio_$ratio")
                         )
@@ -267,7 +257,7 @@ fun VisionTabView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Visión de dirección", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                    Text("Visión de dirección", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                     if (isDraft) {
                         TextButton(
                             onClick = {
@@ -279,9 +269,9 @@ fun VisionTabView(
                             },
                             modifier = Modifier.testTag("director_paste_vision_button")
                         ) {
-                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.size(4.dp))
-                            Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                            Text("Pegar", color = colors.primary, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -302,7 +292,7 @@ fun VisionTabView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Biblia de Continuidad", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                    Text("Biblia de Continuidad", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                     TextButton(
                         onClick = {
                             val clip = readClipboardText(context) ?: return@TextButton
@@ -313,9 +303,9 @@ fun VisionTabView(
                         },
                         modifier = Modifier.testTag("director_paste_bible_button")
                     ) {
-                        Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                        Text("Pegar", color = colors.primary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 OutlinedTextField(
@@ -332,8 +322,8 @@ fun VisionTabView(
                 Button(
                     onClick = onSaveDirectorDraft,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AmberGold,
-                        contentColor = ObsidianBg
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
@@ -372,24 +362,27 @@ fun VisionTabView(
                     Text(
                         text = "Paleta de Color (pulsa para copiar HEX)",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                     if (copiedHex != null) {
                         Text(
                             text = "Copiado al portapapeles: $copiedHex",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TealAtmos
+                            color = colors.secondary
                         )
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val fallbackSwatchColor = colors.primary
                         sequence.colorPalette.forEachIndexed { idx, swatch ->
-                            val parsedColor = remember(swatch.hex) { parseSafeHexColor(swatch.hex) }
+                            val parsedColor = remember(swatch.hex, fallbackSwatchColor) {
+                                parseSafeHexColor(swatch.hex, fallbackSwatchColor)
+                            }
                             Surface(
-                                color = StudioDeepPanel,
+                                color = colors.surfaceVariant,
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                                    .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                                     .clickable {
                                         copyToClipboard(context, swatch.hex)
                                         copiedHex = swatch.hex
@@ -406,26 +399,26 @@ fun VisionTabView(
                                             .size(34.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(parsedColor)
-                                            .border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                                            .border(1.dp, colors.outline, RoundedCornerShape(8.dp))
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = "${swatch.name} · ${swatch.hex}",
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = IvoryPrimary
+                                            color = colors.onSurface
                                         )
                                         if (swatch.role.isNotBlank()) {
                                             Text(
                                                 text = swatch.role,
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = MutedStone
+                                                color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                                             )
                                         }
                                     }
                                     Icon(
                                         imageVector = Icons.Rounded.ContentCopy,
                                         contentDescription = "Copiar color ${swatch.hex}",
-                                        tint = MutedStone,
+                                        tint = colors.onSurfaceVariant,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -460,16 +453,16 @@ fun VisionTabView(
                 icon = Icons.Rounded.Flare
             ) {
                 if (sequence.vfx.cgiElements.isNotEmpty()) {
-                    Text("VFX / Simulaciones CGI", style = MaterialTheme.typography.labelMedium, color = AmberGold)
+                    Text("VFX / Simulaciones CGI", style = MaterialTheme.typography.labelMedium, color = colors.primary)
                     sequence.vfx.cgiElements.forEach { item ->
-                        Text("• $item", style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                        Text("• $item", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                 }
                 if (sequence.vfx.practicalSfx.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    Text("Efectos Prácticos en Set", style = MaterialTheme.typography.labelMedium, color = TealAtmos)
+                    Text("Efectos Prácticos en Set", style = MaterialTheme.typography.labelMedium, color = colors.secondary)
                     sequence.vfx.practicalSfx.forEach { item ->
-                        Text("• $item", style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                        Text("• $item", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                 }
                 SpecRow("Locaciones y Sets", sequence.vfx.locationsAndSets)
@@ -487,25 +480,25 @@ fun VisionTabView(
                     Text(
                         text = "${intelligence.finalizedSequencesCount} secuencias aprobadas · ${intelligence.totalTrackedOutcomes} aprendizajes de alta valoración",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
 
                     if (intelligence.topCameraPatterns.isNotEmpty()) {
                         intelligence.topCameraPatterns.take(2).forEach { pat ->
                             Surface(
-                                color = StudioDeepPanel,
+                                color = colors.surfaceVariant,
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                                    .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(pat.label, style = MaterialTheme.typography.labelLarge, color = IvoryPrimary)
-                                    Text(pat.detail, style = MaterialTheme.typography.bodySmall, color = MutedStone)
+                                    Text(pat.label, style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
+                                    Text(pat.detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant.copy(alpha = 0.78f))
                                     Text(
                                         text = "★ ${"%.1f".format(pat.avgRating)} · ${pat.occurrences} usos",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = AmberGold
+                                        color = colors.primary
                                     )
                                 }
                             }
@@ -514,11 +507,11 @@ fun VisionTabView(
 
                     intelligence.enhancements.forEachIndexed { idx, enh ->
                         Surface(
-                            color = TealContainer,
+                            color = colors.secondaryContainer,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, TealAtmos.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                .border(1.dp, colors.secondary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                         ) {
                             Column(
                                 modifier = Modifier.padding(12.dp),
@@ -527,15 +520,19 @@ fun VisionTabView(
                                 Text(
                                     text = "${enh.title} (${enh.confidenceScore}% confianza)",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = TealAtmos
+                                    color = colors.onSecondaryContainer
                                 )
-                                Text(enh.recommendation, style = MaterialTheme.typography.bodySmall, color = IvoryPrimary)
-                                Text(enh.rationale, style = MaterialTheme.typography.labelSmall, color = MutedStone)
+                                Text(enh.recommendation, style = MaterialTheme.typography.bodySmall, color = colors.onSecondaryContainer)
+                                Text(
+                                    enh.rationale,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSecondaryContainer.copy(alpha = 0.8f)
+                                )
                                 OutlinedButton(
                                     onClick = { onApplyEnhancement(enh.continuitySnippet) },
                                     modifier = Modifier.testTag("apply_enhancement_$idx")
                                 ) {
-                                    Text("Aplicar a Biblia de Continuidad", color = IvoryPrimary)
+                                    Text("Aplicar a Biblia de Continuidad", color = colors.onSecondaryContainer)
                                 }
                             }
                         }
@@ -551,7 +548,7 @@ fun VisionTabView(
                     text = sequence.sequenceRating?.let { "Valoración actual: $it/5 ★" }
                         ?: "Asigna una calificación de 1 a 5 estrellas para entrenar Studio Intelligence:",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MutedStone
+                    color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                 )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -565,7 +562,7 @@ fun VisionTabView(
                             Icon(
                                 imageVector = if (star <= selectedRating) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                                 contentDescription = "$star estrellas",
-                                tint = if (star <= selectedRating) AmberGold else MutedStone,
+                                tint = if (star <= selectedRating) colors.primary else colors.onSurfaceVariant,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -578,7 +575,7 @@ fun VisionTabView(
                         Text(
                             "Nota opcional sobre óptica, luz o ritmo para futuras secuencias…",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MutedStone
+                            color = colors.onSurfaceVariant.copy(alpha = 0.72f)
                         )
                     },
                     colors = visionFieldColors(),
@@ -589,8 +586,8 @@ fun VisionTabView(
                 Button(
                     onClick = { onRateSequence(selectedRating, ratingNote) },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AmberGold,
-                        contentColor = ObsidianBg
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -605,17 +602,20 @@ fun VisionTabView(
 }
 
 @Composable
-private fun visionFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = AmberGold,
-    unfocusedBorderColor = StudioBorder,
-    disabledBorderColor = StudioBorder.copy(alpha = 0.5f),
-    focusedTextColor = IvoryPrimary,
-    unfocusedTextColor = IvoryPrimary,
-    disabledTextColor = WarmSilver,
-    focusedLabelColor = AmberGold,
-    unfocusedLabelColor = MutedStone,
-    disabledLabelColor = MutedStone
-)
+private fun visionFieldColors(): androidx.compose.material3.TextFieldColors {
+    val colors = MaterialTheme.colorScheme
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primary,
+        unfocusedBorderColor = colors.outline,
+        disabledBorderColor = colors.outline.copy(alpha = 0.5f),
+        focusedTextColor = colors.onSurface,
+        unfocusedTextColor = colors.onSurface,
+        disabledTextColor = colors.onSurfaceVariant,
+        focusedLabelColor = colors.primary,
+        unfocusedLabelColor = colors.onSurfaceVariant.copy(alpha = 0.78f),
+        disabledLabelColor = colors.onSurfaceVariant.copy(alpha = 0.6f)
+    )
+}
 
 @Composable
 internal fun SectionCard(
@@ -623,12 +623,13 @@ internal fun SectionCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -642,14 +643,14 @@ internal fun SectionCard(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = AmberGold,
+                        tint = colors.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
-                    color = AmberGold
+                    color = colors.primary
                 )
             }
             content()
@@ -660,23 +661,24 @@ internal fun SectionCard(
 @Composable
 internal fun SpecRow(label: String, value: String) {
     if (value.isBlank()) return
+    val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MutedStone)
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = IvoryPrimary)
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant.copy(alpha = 0.78f))
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
     }
 }
 
-private fun parseSafeHexColor(hex: String): Color {
+private fun parseSafeHexColor(hex: String, fallback: Color): Color {
     val clean = hex.trim().removePrefix("#")
     return try {
         val parsed = clean.toLong(16)
         when (clean.length) {
             6 -> Color((0xFF000000L or parsed).toInt())
             8 -> Color(parsed.toInt())
-            else -> AmberGold
+            else -> fallback
         }
     } catch (_: Exception) {
-        AmberGold
+        fallback
     }
 }
 

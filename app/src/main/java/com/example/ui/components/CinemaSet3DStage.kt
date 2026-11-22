@@ -66,17 +66,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ShotSpec
 import com.example.data.util.StudioLogic
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -112,12 +101,13 @@ fun CinemaSet3DStageCard(
     onOpenFullscreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
         color = Color(0xFF07080D),
         shape = RoundedCornerShape(14.dp),
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         CinemaSet3DViewport(
             sequence = sequence,
@@ -144,7 +134,7 @@ fun CinemaSet3DFullscreenDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(ObsidianBg)
+                .background(Color(0xFF07080D))
         ) {
             CinemaSet3DViewport(
                 sequence = sequence,
@@ -197,6 +187,10 @@ private fun CinemaSet3DViewport(
         }
     }
 
+    val colors = MaterialTheme.colorScheme
+    val amberAccent = colors.primary
+    val tealAccent = colors.secondary
+
     val focalLengthMm = remember(activeShot?.lensMm) {
         parseFocalLengthMm(activeShot?.lensMm)
     }
@@ -206,8 +200,8 @@ private fun CinemaSet3DViewport(
     val keyKelvinColor = remember(sequence.lighting.colorTemperatureKelvin) {
         kelvinToAccentColor(sequence.lighting.colorTemperatureKelvin)
     }
-    val setAccentColor = remember(sequence.colorPalette) {
-        parsePaletteHex(sequence.colorPalette.firstOrNull()?.hex, TealAtmos)
+    val setAccentColor = remember(sequence.colorPalette, tealAccent) {
+        parsePaletteHex(sequence.colorPalette.firstOrNull()?.hex, tealAccent)
     }
 
     Box(
@@ -249,18 +243,20 @@ private fun CinemaSet3DViewport(
                 focalLengthMm = focalLengthMm,
                 aspectRatio = aspectRatioVal,
                 keyLightColor = keyKelvinColor,
-                setAccentColor = setAccentColor
+                setAccentColor = setAccentColor,
+                amberAccent = amberAccent,
+                tealAccent = tealAccent
             )
         }
 
         // Top-Left HUD Badge
         Surface(
-            color = ObsidianBg.copy(alpha = 0.78f),
+            color = colors.surface.copy(alpha = 0.92f),
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(10.dp)
-                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -273,33 +269,33 @@ private fun CinemaSet3DViewport(
                     Icon(
                         imageVector = Icons.Rounded.ViewInAr,
                         contentDescription = null,
-                        tint = AmberGold,
+                        tint = colors.primary,
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
                         text = activeShot?.let { "Plano ${it.shotNumber} · ${focalLengthMm.toInt()}mm" }
                             ?: "Pre-Vis 3D · ${focalLengthMm.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
-                        color = AmberGold,
+                        color = colors.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
                     text = "${sequence.aspectRatio} · ${sequence.lighting.colorTemperatureKelvin.ifBlank { "3200K" }} · Arrastra para orbitar",
                     style = MaterialTheme.typography.labelSmall,
-                    color = WarmSilver
+                    color = colors.onSurfaceVariant
                 )
             }
         }
 
         // Top-Right Fullscreen / Close Button
         Surface(
-            color = ObsidianBg.copy(alpha = 0.78f),
+            color = colors.surface.copy(alpha = 0.92f),
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(10.dp)
-                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
         ) {
             IconButton(
                 onClick = onToggleFullscreen,
@@ -310,7 +306,7 @@ private fun CinemaSet3DViewport(
                 Icon(
                     imageVector = if (isFullscreen) Icons.Rounded.Close else Icons.Rounded.Fullscreen,
                     contentDescription = if (isFullscreen) "Salir de pantalla completa 3D" else "Expandir escenario 3D",
-                    tint = IvoryPrimary
+                    tint = colors.onSurface
                 )
             }
         }
@@ -329,10 +325,10 @@ private fun CinemaSet3DViewport(
                 exit = fadeOut()
             ) {
                 Surface(
-                    color = StudioCard.copy(alpha = 0.94f),
+                    color = colors.surface.copy(alpha = 0.96f),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
-                        .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+                        .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
                 ) {
                     Column(
                         modifier = Modifier.padding(10.dp),
@@ -356,10 +352,10 @@ private fun CinemaSet3DViewport(
                                         )
                                     },
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = AmberContainer,
-                                        selectedLabelColor = AmberGold,
-                                        containerColor = StudioDeepPanel,
-                                        labelColor = WarmSilver
+                                        selectedContainerColor = colors.primaryContainer,
+                                        selectedLabelColor = colors.onPrimaryContainer,
+                                        containerColor = colors.surfaceVariant,
+                                        labelColor = colors.onSurfaceVariant
                                     )
                                 )
                             }
@@ -376,25 +372,25 @@ private fun CinemaSet3DViewport(
                                 Icon(
                                     imageVector = if (autoOrbit) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                     contentDescription = if (autoOrbit) "Pausar órbita automática" else "Activar órbita automática",
-                                    tint = if (autoOrbit) TealAtmos else IvoryPrimary
+                                    tint = if (autoOrbit) colors.secondary else colors.onSurface
                                 )
                             }
                             IconButton(
                                 onClick = { targetZoom = (targetZoom - 0.15f).coerceIn(0.65f, 1.85f) },
                                 modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(Icons.Rounded.Remove, contentDescription = "Alejar cámara 3D", tint = IvoryPrimary)
+                                Icon(Icons.Rounded.Remove, contentDescription = "Alejar cámara 3D", tint = colors.onSurface)
                             }
                             Text(
                                 text = "${(currentZoom * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedStone
+                                color = colors.onSurfaceVariant
                             )
                             IconButton(
                                 onClick = { targetZoom = (targetZoom + 0.15f).coerceIn(0.65f, 1.85f) },
                                 modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(Icons.Rounded.Add, contentDescription = "Acercar cámara 3D", tint = IvoryPrimary)
+                                Icon(Icons.Rounded.Add, contentDescription = "Acercar cámara 3D", tint = colors.onSurface)
                             }
                             IconButton(
                                 onClick = {
@@ -406,7 +402,7 @@ private fun CinemaSet3DViewport(
                                 },
                                 modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(Icons.Rounded.Refresh, contentDescription = "Restablecer cámara 3D", tint = AmberGold)
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Restablecer cámara 3D", tint = colors.primary)
                             }
                         }
                     }
@@ -414,10 +410,10 @@ private fun CinemaSet3DViewport(
             }
 
             Surface(
-                color = if (dockExpanded) AmberContainer else ObsidianBg.copy(alpha = 0.85f),
+                color = if (dockExpanded) colors.primaryContainer else colors.surface.copy(alpha = 0.92f),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier
-                    .border(1.dp, if (dockExpanded) AmberGold else StudioBorder, RoundedCornerShape(24.dp))
+                    .border(1.dp, if (dockExpanded) colors.primary else colors.outline, RoundedCornerShape(24.dp))
             ) {
                 IconButton(
                     onClick = { dockExpanded = !dockExpanded },
@@ -433,13 +429,13 @@ private fun CinemaSet3DViewport(
                         Icon(
                             imageVector = if (dockExpanded) Icons.Rounded.Cameraswitch else Icons.Rounded.Tune,
                             contentDescription = "Alternar controles de cámara 3D",
-                            tint = AmberGold,
+                            tint = if (dockExpanded) colors.onPrimaryContainer else colors.primary,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = if (dockExpanded) "Ocultar 3D" else "Controles 3D",
                             style = MaterialTheme.typography.labelSmall,
-                            color = IvoryPrimary,
+                            color = if (dockExpanded) colors.onPrimaryContainer else colors.onSurface,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -456,7 +452,9 @@ private fun DrawScope.drawCinemaStage3D(
     focalLengthMm: Float,
     aspectRatio: Float,
     keyLightColor: Color,
-    setAccentColor: Color
+    setAccentColor: Color,
+    amberAccent: Color,
+    tealAccent: Color
 ) {
     val yaw = (yawDeg * PI / 180.0).toFloat()
     val pitch = (pitchDeg * PI / 180.0).toFloat()
@@ -539,9 +537,11 @@ private fun DrawScope.drawCinemaStage3D(
     addBox(1.45f, 1.0f, -1.65f, 0.42f, 2.0f, 0.24f, setAccentColor.copy(alpha = 0.24f), setAccentColor.copy(alpha = 0.60f))
 
     // Subject / Actor Blocking Silhouette (Legs + Torso + Head at Z = -0.35)
-    addBox(0f, 0.35f, -0.35f, 0.24f, 0.70f, 0.18f, Color(0xFF3E4559), IvoryPrimary.copy(alpha = 0.35f))
-    addBox(0f, 0.90f, -0.35f, 0.34f, 0.44f, 0.20f, Color(0xFF4D5670), AmberGold.copy(alpha = 0.55f))
-    addBox(0f, 1.24f, -0.35f, 0.18f, 0.20f, 0.18f, Color(0xFF7D859B), AmberGold.copy(alpha = 0.75f))
+    val actorOutline = Color(0xFFF2F0EB)
+    val silverChrome = Color(0xFFCFCAC0)
+    addBox(0f, 0.35f, -0.35f, 0.24f, 0.70f, 0.18f, Color(0xFF3E4559), actorOutline.copy(alpha = 0.35f))
+    addBox(0f, 0.90f, -0.35f, 0.34f, 0.44f, 0.20f, Color(0xFF4D5670), amberAccent.copy(alpha = 0.55f))
+    addBox(0f, 1.24f, -0.35f, 0.18f, 0.20f, 0.18f, Color(0xFF7D859B), amberAccent.copy(alpha = 0.75f))
 
     // Dolly Track Rails (along Z = 0.9 .. 2.35)
     addBox(-0.34f, 0.03f, 1.62f, 0.06f, 0.05f, 1.55f, Color(0xFF757E94), Color.White.copy(alpha = 0.25f))
@@ -551,11 +551,11 @@ private fun DrawScope.drawCinemaStage3D(
     }
 
     // Cinema Camera Dolly Cart + Pedestal + ARRI Camera Rig + Lens Barrel at Z = 1.55
-    addBox(0f, 0.11f, 1.55f, 0.62f, 0.10f, 0.52f, Color(0xFF2B3140), AmberGold.copy(alpha = 0.5f))
+    addBox(0f, 0.11f, 1.55f, 0.62f, 0.10f, 0.52f, Color(0xFF2B3140), amberAccent.copy(alpha = 0.5f))
     addBox(0f, 0.48f, 1.55f, 0.12f, 0.66f, 0.12f, Color(0xFF565E73))
-    addBox(0f, 0.87f, 1.55f, 0.24f, 0.22f, 0.34f, Color(0xFF1F2430), AmberGold) // Camera Body
-    addBox(0f, 1.03f, 1.62f, 0.18f, 0.14f, 0.16f, Color(0xFF2B303E), WarmSilver.copy(alpha = 0.4f)) // Magazine
-    addBox(0f, 0.87f, 1.29f, 0.13f, 0.13f, 0.22f, Color(0xFF12161E), TealAtmos) // Lens + Matte Box
+    addBox(0f, 0.87f, 1.55f, 0.24f, 0.22f, 0.34f, Color(0xFF1F2430), amberAccent) // Camera Body
+    addBox(0f, 1.03f, 1.62f, 0.18f, 0.14f, 0.16f, Color(0xFF2B303E), silverChrome.copy(alpha = 0.4f)) // Magazine
+    addBox(0f, 0.87f, 1.29f, 0.13f, 0.13f, 0.22f, Color(0xFF12161E), tealAccent) // Lens + Matte Box
 
     // Key Light Tripod Stand + Barn-door Fixture (Front-Right of Subject)
     addBox(1.55f, 0.55f, 0.65f, 0.06f, 1.10f, 0.06f, Color(0xFF505768))
@@ -567,7 +567,7 @@ private fun DrawScope.drawCinemaStage3D(
 
     // Rim / Backlight Stand (Rear-Right)
     addBox(0.95f, 0.68f, -1.25f, 0.05f, 1.36f, 0.05f, Color(0xFF4A5060))
-    addBox(0.95f, 1.42f, -1.25f, 0.18f, 0.18f, 0.14f, TealAtmos.copy(alpha = 0.85f), TealAtmos)
+    addBox(0.95f, 1.42f, -1.25f, 0.18f, 0.18f, 0.14f, tealAccent.copy(alpha = 0.85f), tealAccent)
 
     // Key Light Volumetric Beam Cone toward Subject
     val keySrc = Vec3(1.48f, 1.16f, 0.58f)
@@ -589,13 +589,13 @@ private fun DrawScope.drawCinemaStage3D(
     val fBR = Vec3(halfW, 0.87f - halfH, lensTip.z - frustumDepth)
     val fBL = Vec3(-halfW, 0.87f - halfH, lensTip.z - frustumDepth)
 
-    val frustumFill = AmberGold.copy(alpha = 0.10f)
-    val frustumEdge = AmberGold.copy(alpha = 0.62f)
+    val frustumFill = amberAccent.copy(alpha = 0.10f)
+    val frustumEdge = amberAccent.copy(alpha = 0.62f)
     faces += Face3D(listOf(lensTip, fTL, fTR), frustumFill, frustumEdge, 1.4f)
     faces += Face3D(listOf(lensTip, fTR, fBR), frustumFill, frustumEdge, 1.4f)
     faces += Face3D(listOf(lensTip, fBR, fBL), frustumFill, frustumEdge, 1.4f)
     faces += Face3D(listOf(lensTip, fBL, fTL), frustumFill, frustumEdge, 1.4f)
-    faces += Face3D(listOf(fTL, fTR, fBR, fBL), AmberGold.copy(alpha = 0.06f), AmberGold.copy(alpha = 0.85f), 1.8f)
+    faces += Face3D(listOf(fTL, fTR, fBR, fBL), amberAccent.copy(alpha = 0.06f), amberAccent.copy(alpha = 0.85f), 1.8f)
 
     // Transform & Depth Sort Faces Back-to-Front
     val sorted = faces.map { face ->

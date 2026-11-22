@@ -56,15 +56,6 @@ import com.example.R
 import com.example.data.model.ProductionSequence
 import com.example.data.model.StoryboardCard
 import com.example.data.util.StudioLogic
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.WarmSilver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -77,19 +68,20 @@ fun StoryboardTabView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     var copiedBanner by remember { mutableStateOf<String?>(null) }
     var lightboxFrame by remember { mutableStateOf<StoryboardCard?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         if (copiedBanner != null) {
             Surface(
-                color = StudioDeepPanel,
+                color = colors.surfaceVariant,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = copiedBanner!!,
                     style = MaterialTheme.typography.labelMedium,
-                    color = TealAtmos,
+                    color = colors.secondary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -107,7 +99,7 @@ fun StoryboardTabView(
                     Text(
                         text = "No hay tarjetas de storyboard generadas todavía.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
             } else {
@@ -152,6 +144,7 @@ private fun StoryboardFrameItem(
     onCopyVisual: () -> Unit,
     onCopyMotion: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val ratio = StudioLogic.parseAspectRatio(frame.aspectRatio.ifBlank { sequenceAspectRatio })
         .coerceIn(0.6f, 2.5f)
     val bitmapState by produceState<android.graphics.Bitmap?>(initialValue = null, frame.localImagePath) {
@@ -165,11 +158,11 @@ private fun StoryboardFrameItem(
     }
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -184,12 +177,12 @@ private fun StoryboardFrameItem(
                     Text(
                         text = frame.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                     Text(
                         text = "${frame.shotRef} · ${frame.cameraSpec}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = AmberGold
+                        color = colors.primary
                     )
                 }
             }
@@ -200,8 +193,8 @@ private fun StoryboardFrameItem(
                     .fillMaxWidth()
                     .aspectRatio(ratio)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(StudioDeepPanel)
-                    .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                    .background(colors.surfaceVariant)
+                    .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                     .clickable(enabled = bitmapState != null) { onOpenLightbox() },
                 contentAlignment = Alignment.Center
             ) {
@@ -222,13 +215,13 @@ private fun StoryboardFrameItem(
                         Icon(
                             imageVector = Icons.Rounded.Image,
                             contentDescription = null,
-                            tint = MutedStone,
+                            tint = colors.onSurfaceVariant.copy(alpha = 0.72f),
                             modifier = Modifier.size(32.dp)
                         )
                         Text(
                             text = "Sin fotograma renderizado aún",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MutedStone
+                            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                         )
                     }
                 }
@@ -238,13 +231,13 @@ private fun StoryboardFrameItem(
             Text(
                 text = "Visual Prompt: ${frame.visualPrompt}",
                 style = MaterialTheme.typography.bodySmall,
-                color = WarmSilver
+                color = colors.onSurfaceVariant
             )
             if (frame.veoMotionPrompt.isNotBlank()) {
                 Text(
                     text = "Motion Prompt (Cámara): ${frame.veoMotionPrompt}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = TealAtmos
+                    color = colors.secondary
                 )
             }
 
@@ -253,8 +246,8 @@ private fun StoryboardFrameItem(
                 onClick = onGenerate,
                 enabled = !isGenerating,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AmberGold,
-                    contentColor = ObsidianBg
+                    containerColor = colors.primary,
+                    contentColor = colors.onPrimary
                 ),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
@@ -265,7 +258,7 @@ private fun StoryboardFrameItem(
                 if (isGenerating) {
                     CircularProgressIndicator(
                         strokeWidth = 2.dp,
-                        color = ObsidianBg,
+                        color = colors.onPrimary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.size(8.dp))
@@ -298,11 +291,11 @@ private fun StoryboardFrameItem(
                     Icon(
                         imageVector = Icons.Rounded.ContentCopy,
                         contentDescription = null,
-                        tint = IvoryPrimary,
+                        tint = colors.onSurface,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.size(4.dp))
-                    Text("Visual", color = IvoryPrimary, style = MaterialTheme.typography.labelMedium)
+                    Text("Visual", color = colors.onSurface, style = MaterialTheme.typography.labelMedium)
                 }
                 if (frame.veoMotionPrompt.isNotBlank()) {
                     OutlinedButton(
@@ -315,11 +308,11 @@ private fun StoryboardFrameItem(
                         Icon(
                             imageVector = Icons.Rounded.ContentCopy,
                             contentDescription = null,
-                            tint = TealAtmos,
+                            tint = colors.secondary,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.size(4.dp))
-                        Text("Movimiento", color = TealAtmos, style = MaterialTheme.typography.labelMedium)
+                        Text("Movimiento", color = colors.secondary, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -332,6 +325,7 @@ private fun LightboxImageDialog(
     frame: StoryboardCard,
     onDismiss: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val bmp = remember(frame.localImagePath) {
         frame.localImagePath?.let { path ->
             if (File(path).exists()) BitmapFactory.decodeFile(path) else null
@@ -345,7 +339,7 @@ private fun LightboxImageDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(ObsidianBg.copy(alpha = 0.96f))
+                .background(colors.background.copy(alpha = 0.97f))
                 .padding(16.dp)
         ) {
             IconButton(
@@ -357,7 +351,7 @@ private fun LightboxImageDialog(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = "Cerrar vista ampliada",
-                    tint = IvoryPrimary
+                    tint = colors.onBackground
                 )
             }
             Column(
@@ -377,8 +371,8 @@ private fun LightboxImageDialog(
                             .height(340.dp)
                     )
                 }
-                Text(frame.title, style = MaterialTheme.typography.titleMedium, color = AmberGold)
-                Text(frame.visualPrompt, style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                Text(frame.title, style = MaterialTheme.typography.titleMedium, color = colors.primary)
+                Text(frame.visualPrompt, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
         }
     }

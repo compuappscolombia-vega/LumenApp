@@ -91,19 +91,6 @@ import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.SourceMaterialType
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.ErrorCrimson
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurface
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 import com.google.firebase.auth.FirebaseUser
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,14 +137,16 @@ fun ProjectDashboardScreen(
         }
     }
 
+    val colors = MaterialTheme.colorScheme
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = ObsidianBg,
+        containerColor = colors.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = StudioSurface,
-                    titleContentColor = IvoryPrimary
+                    containerColor = colors.surface,
+                    titleContentColor = colors.onSurface
                 ),
                 title = {
                     Row(
@@ -171,21 +160,21 @@ fun ProjectDashboardScreen(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .border(1.dp, AmberGold.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                                .border(1.dp, colors.primary.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
                                 .testTag("dashboard_header_logo")
                         )
                         Column {
                             Text(
                                 text = stringResource(R.string.dashboard_title),
                                 style = MaterialTheme.typography.titleMedium,
-                                color = IvoryPrimary,
+                                color = colors.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = stringResource(R.string.studio_brand_subtitle),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = AmberGold,
+                                color = colors.primary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -201,8 +190,8 @@ fun ProjectDashboardScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Brightness6,
-                            contentDescription = "Cambiar tema de color",
-                            tint = AmberGold
+                            contentDescription = if (isDarkMode) "Cambiar a Modo Claro" else "Cambiar a Modo Oscuro",
+                            tint = colors.primary
                         )
                     }
                     IconButton(
@@ -214,7 +203,7 @@ fun ProjectDashboardScreen(
                         Icon(
                             imageVector = Icons.Rounded.CalendarMonth,
                             contentDescription = "Calendario de producción",
-                            tint = AmberGold
+                            tint = colors.primary
                         )
                     }
                     IconButton(
@@ -226,7 +215,7 @@ fun ProjectDashboardScreen(
                         Icon(
                             imageVector = Icons.Rounded.Insights,
                             contentDescription = "Abrir analítica del estudio",
-                            tint = AmberGold
+                            tint = colors.primary
                         )
                     }
                     IconButton(
@@ -238,7 +227,7 @@ fun ProjectDashboardScreen(
                         Icon(
                             imageVector = Icons.Rounded.AccountCircle,
                             contentDescription = stringResource(R.string.cd_account_menu),
-                            tint = IvoryPrimary
+                            tint = colors.onSurface
                         )
                     }
                     Box {
@@ -251,7 +240,7 @@ fun ProjectDashboardScreen(
                             Icon(
                                 imageVector = Icons.Rounded.MoreVert,
                                 contentDescription = "Más acciones del estudio",
-                                tint = IvoryPrimary
+                                tint = colors.onSurface
                             )
                         }
                         DropdownMenu(
@@ -324,8 +313,8 @@ fun ProjectDashboardScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onCreateProjectClick,
-                containerColor = AmberGold,
-                contentColor = ObsidianBg,
+                containerColor = colors.primary,
+                contentColor = colors.onPrimary,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.navigationBars)
@@ -345,7 +334,7 @@ fun ProjectDashboardScreen(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xFF0E0E13), ObsidianBg, Color(0xFF100E0B))
+                        listOf(colors.surfaceVariant.copy(alpha = 0.45f), colors.background, colors.background)
                     )
                 )
                 .padding(innerPadding)
@@ -361,11 +350,11 @@ fun ProjectDashboardScreen(
 
                 val telemetryHeader: @Composable () -> Unit = {
                     Surface(
-                        color = StudioCard,
+                        color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+                            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -380,7 +369,7 @@ fun ProjectDashboardScreen(
                                     Text(
                                         text = "Director: ${currentUser?.displayName ?: "Cuenta LumenReel"}",
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = IvoryPrimary,
+                                        color = colors.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -389,7 +378,7 @@ fun ProjectDashboardScreen(
                                             ?.let { "$it · Perfil privado en Cloud Firestore" }
                                             ?: stringResource(R.string.dashboard_subtitle),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MutedStone,
+                                        color = colors.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -403,19 +392,19 @@ fun ProjectDashboardScreen(
                                 DashboardStatPill(
                                     label = "Producciones",
                                     value = projects.size.toString(),
-                                    accent = AmberGold,
+                                    accent = colors.primary,
                                     modifier = Modifier.weight(1f)
                                 )
                                 DashboardStatPill(
                                     label = "Secuencias",
                                     value = totalSequences.toString(),
-                                    accent = TealAtmos,
+                                    accent = colors.secondary,
                                     modifier = Modifier.weight(1f)
                                 )
                                 DashboardStatPill(
                                     label = "Finales",
                                     value = totalFinals.toString(),
-                                    accent = IvoryPrimary,
+                                    accent = colors.onSurface,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -432,20 +421,20 @@ fun ProjectDashboardScreen(
                                 Text(
                                     text = stringResource(R.string.search_projects_hint),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MutedStone
+                                    color = colors.onSurfaceVariant
                                 )
                             },
                             leadingIcon = {
-                                Icon(Icons.Rounded.Search, contentDescription = null, tint = MutedStone)
+                                Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.onSurfaceVariant)
                             },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AmberGold,
-                                unfocusedBorderColor = StudioBorder,
-                                focusedContainerColor = StudioCard,
-                                unfocusedContainerColor = StudioCard,
-                                focusedTextColor = IvoryPrimary,
-                                unfocusedTextColor = IvoryPrimary
+                                focusedBorderColor = colors.primary,
+                                unfocusedBorderColor = colors.outline,
+                                focusedContainerColor = colors.surface,
+                                unfocusedContainerColor = colors.surface,
+                                focusedTextColor = colors.onSurface,
+                                unfocusedTextColor = colors.onSurface
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
@@ -499,11 +488,11 @@ fun ProjectDashboardScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(
-                                color = StudioCard,
+                                color = colors.surface,
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .widthIn(max = 460.dp)
-                                    .border(1.dp, StudioBorder, RoundedCornerShape(16.dp))
+                                    .border(1.dp, colors.outline, RoundedCornerShape(16.dp))
                             ) {
                                 Column(
                                     modifier = Modifier.padding(24.dp),
@@ -513,7 +502,7 @@ fun ProjectDashboardScreen(
                                     Icon(
                                         imageVector = Icons.Rounded.Movie,
                                         contentDescription = null,
-                                        tint = AmberGold,
+                                        tint = colors.primary,
                                         modifier = Modifier.size(38.dp)
                                     )
                                     Text(
@@ -523,7 +512,7 @@ fun ProjectDashboardScreen(
                                             "Sin coincidencias para tu filtro"
                                         },
                                         style = MaterialTheme.typography.titleLarge,
-                                        color = IvoryPrimary
+                                        color = colors.onSurface
                                     )
                                     Text(
                                         text = if (projects.isEmpty()) {
@@ -532,13 +521,13 @@ fun ProjectDashboardScreen(
                                             "Prueba limpiando la búsqueda o crea una nueva producción cinematográfica."
                                         },
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MutedStone
+                                        color = colors.onSurfaceVariant
                                     )
                                     Button(
                                         onClick = onCreateProjectClick,
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = AmberGold,
-                                            contentColor = ObsidianBg
+                                            containerColor = colors.primary,
+                                            contentColor = colors.onPrimary
                                         ),
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier
@@ -607,9 +596,9 @@ fun ProjectDashboardScreen(
     projectPendingDelete?.let { pending ->
         AlertDialog(
             onDismissRequest = { projectPendingDelete = null },
-            containerColor = StudioCard,
-            titleContentColor = IvoryPrimary,
-            textContentColor = WarmSilver,
+            containerColor = colors.surface,
+            titleContentColor = colors.onSurface,
+            textContentColor = colors.onSurfaceVariant,
             title = { Text("Eliminar producción") },
             text = {
                 Text("¿Deseas eliminar «${pending.title}» y sus secuencias asociadas de tu estudio privado?")
@@ -620,7 +609,7 @@ fun ProjectDashboardScreen(
                         onDeleteProject(pending.id)
                         projectPendingDelete = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorCrimson, contentColor = IvoryPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.error, contentColor = colors.onError),
                     modifier = Modifier.testTag("confirm_delete_project_button")
                 ) {
                     Text("Eliminar")
@@ -628,7 +617,7 @@ fun ProjectDashboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { projectPendingDelete = null }) {
-                    Text(stringResource(R.string.action_cancel), color = MutedStone)
+                    Text(stringResource(R.string.action_cancel), color = colors.onSurfaceVariant)
                 }
             }
         )
@@ -643,6 +632,7 @@ private fun ProjectDashboardCard(
     onSelect: () -> Unit,
     onRequestDelete: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val stats = remember(project.sequences, project.sequencesCount) {
         StudioLogic.computeProjectStats(project)
     }
@@ -659,13 +649,13 @@ private fun ProjectDashboardCard(
     }
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) AmberGold.copy(alpha = 0.8f) else StudioBorder,
+                color = if (isSelected) colors.primary.copy(alpha = 0.8f) else colors.outline,
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable(onClick = onSelect)
@@ -689,25 +679,25 @@ private fun ProjectDashboardCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Surface(
-                            color = TealContainer,
+                            color = colors.secondaryContainer,
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
                                 text = StudioLogic.getSourceTypeLabel(project.defaultSourceType),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = TealAtmos,
+                                color = colors.onSecondaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                         Surface(
-                            color = StudioDeepPanel,
+                            color = colors.surfaceVariant,
                             shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(6.dp))
+                            modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(6.dp))
                         ) {
                             Text(
                                 text = "${templateMeta.name} · ${folders.size} carpetas",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = WarmSilver,
+                                color = colors.onSurfaceVariant,
                                 modifier = Modifier
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                                     .testTag("project_folders_badge_${project.id}")
@@ -715,13 +705,13 @@ private fun ProjectDashboardCard(
                         }
                         if (isSelected) {
                             Surface(
-                                color = AmberContainer,
+                                color = colors.primaryContainer,
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
                                     text = "ACTIVA",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = AmberGold,
+                                    color = colors.onPrimaryContainer,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
@@ -732,14 +722,14 @@ private fun ProjectDashboardCard(
                     Text(
                         text = project.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = IvoryPrimary,
+                        color = colors.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = project.genreStyle,
                         style = MaterialTheme.typography.labelMedium,
-                        color = AmberGold,
+                        color = colors.primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -754,7 +744,7 @@ private fun ProjectDashboardCard(
                     Icon(
                         imageVector = Icons.Rounded.DeleteOutline,
                         contentDescription = "Eliminar ${project.title}",
-                        tint = MutedStone
+                        tint = colors.onSurfaceVariant
                     )
                 }
             }
@@ -763,7 +753,7 @@ private fun ProjectDashboardCard(
                 Text(
                     text = project.continuityBible,
                     style = MaterialTheme.typography.bodySmall,
-                    color = WarmSilver,
+                    color = colors.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -771,7 +761,7 @@ private fun ProjectDashboardCard(
                 Text(
                     text = "Biblia de continuidad lista para definir reglas visuales, personajes y tono.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MutedStone,
+                    color = colors.onSurfaceVariant.copy(alpha = 0.78f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -786,9 +776,9 @@ private fun ProjectDashboardCard(
                 ) {
                     folders.forEach { folder ->
                         Surface(
-                            color = StudioDeepPanel,
+                            color = colors.surfaceVariant,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                            modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(8.dp))
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -798,13 +788,13 @@ private fun ProjectDashboardCard(
                                 Icon(
                                     imageVector = Icons.Rounded.Folder,
                                     contentDescription = null,
-                                    tint = AmberGold,
+                                    tint = colors.primary,
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Text(
                                     text = folder.name,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = WarmSilver,
+                                    color = colors.onSurfaceVariant,
                                     maxLines = 1
                                 )
                             }
@@ -814,11 +804,11 @@ private fun ProjectDashboardCard(
             }
 
             Surface(
-                color = StudioDeepPanel,
+                color = colors.surfaceVariant,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                    .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
             ) {
                 Row(
                     modifier = Modifier
@@ -835,7 +825,7 @@ private fun ProjectDashboardCard(
                             if (stats.estimatedMinutes > 0.0) append(" · ${stats.estimatedMinutes} min")
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = WarmSilver,
+                        color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
                     )
                     Row(
@@ -845,13 +835,13 @@ private fun ProjectDashboardCard(
                         Text(
                             text = "Abrir estudio",
                             style = MaterialTheme.typography.labelMedium,
-                            color = AmberGold,
+                            color = colors.primary,
                             fontWeight = FontWeight.SemiBold
                         )
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
                             contentDescription = null,
-                            tint = AmberGold,
+                            tint = colors.primary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -868,17 +858,18 @@ private fun DashboardStatPill(
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = StudioDeepPanel,
+        color = colors.surfaceVariant,
         shape = RoundedCornerShape(10.dp),
-        modifier = modifier.border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+        modifier = modifier.border(1.dp, colors.outline, RoundedCornerShape(10.dp))
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(text = value, style = MaterialTheme.typography.titleMedium, color = accent, fontWeight = FontWeight.Bold)
-            Text(text = label, style = MaterialTheme.typography.labelSmall, color = MutedStone, maxLines = 1)
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
         }
     }
 }
@@ -890,21 +881,22 @@ private fun DashboardFilterChip(
     onClick: () -> Unit,
     tag: String
 ) {
+    val colors = MaterialTheme.colorScheme
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(label, style = MaterialTheme.typography.labelMedium) },
         colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = AmberContainer,
-            selectedLabelColor = AmberGold,
-            containerColor = StudioCard,
-            labelColor = WarmSilver
+            selectedContainerColor = colors.primaryContainer,
+            selectedLabelColor = colors.onPrimaryContainer,
+            containerColor = colors.surface,
+            labelColor = colors.onSurfaceVariant
         ),
         border = FilterChipDefaults.filterChipBorder(
             enabled = true,
             selected = selected,
-            borderColor = StudioBorder,
-            selectedBorderColor = AmberGold.copy(alpha = 0.65f)
+            borderColor = colors.outline,
+            selectedBorderColor = colors.primary.copy(alpha = 0.65f)
         ),
         modifier = Modifier.testTag(tag)
     )
@@ -916,8 +908,9 @@ private fun DashboardBannerBar(
     isError: Boolean,
     onDismiss: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = if (isError) com.example.ui.theme.ErrorContainerDark else TealContainer,
+        color = if (isError) colors.errorContainer else colors.secondaryContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -930,11 +923,15 @@ private fun DashboardBannerBar(
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isError) com.example.ui.theme.ErrorLightText else IvoryPrimary,
+                color = if (isError) colors.onErrorContainer else colors.onSecondaryContainer,
                 modifier = Modifier.weight(1f)
             )
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close), color = IvoryPrimary, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    stringResource(R.string.action_close),
+                    color = if (isError) colors.onErrorContainer else colors.onSecondaryContainer,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
         }
     }

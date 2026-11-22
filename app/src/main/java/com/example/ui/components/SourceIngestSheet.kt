@@ -76,19 +76,6 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.ThinkingDepth
 import com.example.data.util.StudioLogic
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.ErrorContainerDark
-import com.example.ui.theme.ErrorLightText
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 
 private const val MAX_FILE_BYTES = 19 * 1024 * 1024
 
@@ -126,9 +113,10 @@ fun SourceIngestModalSheet(
                 ),
             contentAlignment = Alignment.BottomCenter
         ) {
+            val colors = MaterialTheme.colorScheme
             Surface(
-                color = StudioCard,
-                contentColor = IvoryPrimary,
+                color = colors.surface,
+                contentColor = colors.onSurface,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 modifier = Modifier
                     .widthIn(max = 720.dp)
@@ -175,6 +163,7 @@ fun SourceIngestContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     var clipboardNotice by remember { mutableStateOf<String?>(null) }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
@@ -226,12 +215,12 @@ fun SourceIngestContent(
                 Text(
                     text = stringResource(R.string.ingest_title),
                     style = MaterialTheme.typography.titleMedium,
-                    color = AmberGold
+                    color = colors.primary
                 )
                 Text(
                     text = project.title,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MutedStone
+                    color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                 )
             }
             if (onClose != null) {
@@ -239,12 +228,12 @@ fun SourceIngestContent(
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.action_close),
-                        tint = MutedStone
+                        tint = colors.onSurfaceVariant
                     )
                 }
             }
         }
-        HorizontalDivider(color = StudioBorder)
+        HorizontalDivider(color = colors.outline)
 
         Column(
             modifier = Modifier
@@ -262,7 +251,12 @@ fun SourceIngestContent(
                 onDraftChange { it.copy(sequenceTitle = value, ingestError = null) }
             },
             label = { Text(stringResource(R.string.ingest_seq_title_label)) },
-            placeholder = { Text(stringResource(R.string.ingest_seq_title_hint), color = MutedStone) },
+            placeholder = {
+                Text(
+                    stringResource(R.string.ingest_seq_title_hint),
+                    color = colors.onSurfaceVariant.copy(alpha = 0.72f)
+                )
+            },
             singleLine = true,
             colors = fieldColors(),
             modifier = Modifier
@@ -274,7 +268,7 @@ fun SourceIngestContent(
         Text(
             text = stringResource(R.string.ingest_source_type_label),
             style = MaterialTheme.typography.labelMedium,
-            color = WarmSilver
+            color = colors.onSurfaceVariant
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -305,7 +299,7 @@ fun SourceIngestContent(
         Text(
             text = stringResource(R.string.ingest_style_label),
             style = MaterialTheme.typography.labelMedium,
-            color = WarmSilver
+            color = colors.onSurfaceVariant
         )
         Row(
             modifier = Modifier
@@ -336,7 +330,7 @@ fun SourceIngestContent(
         Text(
             text = stringResource(R.string.ingest_ratio_label),
             style = MaterialTheme.typography.labelMedium,
-            color = WarmSilver
+            color = colors.onSurfaceVariant
         )
         Row(
             modifier = Modifier
@@ -359,7 +353,7 @@ fun SourceIngestContent(
         Text(
             text = stringResource(R.string.ingest_depth_label),
             style = MaterialTheme.typography.labelMedium,
-            color = WarmSilver
+            color = colors.onSurfaceVariant
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
@@ -396,13 +390,13 @@ fun SourceIngestContent(
                 Icon(
                     imageVector = Icons.Rounded.AttachFile,
                     contentDescription = null,
-                    tint = AmberGold,
+                    tint = colors.primary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.size(6.dp))
                 Text(
                     text = attachedFile?.filename ?: stringResource(R.string.ingest_pick_file),
-                    color = IvoryPrimary,
+                    color = colors.onSurface,
                     maxLines = 1
                 )
             }
@@ -414,7 +408,7 @@ fun SourceIngestContent(
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.ingest_clear_file),
-                        tint = MutedStone
+                        tint = colors.onSurfaceVariant
                     )
                 }
             }
@@ -423,7 +417,7 @@ fun SourceIngestContent(
         Text(
             text = "Formatos: PDF, TXT, MD, Fountain, SRT o Audio (MP3/WAV/M4A). Desde tu PC, arrastra el archivo sobre la ventana del emulador para guardarlo en Descargas y selecciónalo aquí.",
             style = MaterialTheme.typography.labelSmall,
-            color = MutedStone
+            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
         )
 
         if (isTextFileAttached) {
@@ -442,7 +436,7 @@ fun SourceIngestContent(
             ) {
                 Text(
                     text = "Copiar contenido de ${attachedFile.filename} al campo de texto",
-                    color = TealAtmos,
+                    color = colors.secondary,
                     style = MaterialTheme.typography.labelMedium
                 )
             }
@@ -450,7 +444,7 @@ fun SourceIngestContent(
 
         if (draft.fileError != null) {
             Surface(
-                color = ErrorContainerDark,
+                color = colors.errorContainer,
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -459,7 +453,7 @@ fun SourceIngestContent(
                 Text(
                     text = draft.fileError,
                     style = MaterialTheme.typography.bodySmall,
-                    color = ErrorLightText,
+                    color = colors.onErrorContainer,
                     modifier = Modifier.padding(10.dp)
                 )
             }
@@ -475,40 +469,40 @@ fun SourceIngestContent(
                     .testTag("analyze_audio_only_button")
             ) {
                 if (isAnalyzingAudio) {
-                    CircularProgressIndicator(strokeWidth = 2.dp, color = TealAtmos, modifier = Modifier.size(16.dp))
+                    CircularProgressIndicator(strokeWidth = 2.dp, color = colors.secondary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.ingest_analyzing_audio), color = TealAtmos)
+                    Text(stringResource(R.string.ingest_analyzing_audio), color = colors.secondary)
                 } else {
-                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.ingest_analyze_audio), color = TealAtmos)
+                    Text(stringResource(R.string.ingest_analyze_audio), color = colors.secondary)
                 }
             }
         }
 
         if (latestAudioReport != null) {
             Surface(
-                color = TealContainer,
+                color = colors.secondaryContainer,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, TealAtmos.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                    .border(1.dp, colors.secondary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Resumen Audio Analizado", style = MaterialTheme.typography.labelLarge, color = TealAtmos)
+                    Text("Resumen Audio Analizado", style = MaterialTheme.typography.labelLarge, color = colors.onSecondaryContainer)
                     Text(
                         text = latestAudioReport.directingRecommendations.ifBlank { latestAudioReport.emotionalArc },
                         style = MaterialTheme.typography.bodySmall,
-                        color = IvoryPrimary
+                        color = colors.onSecondaryContainer
                     )
                     if (latestAudioReport.transcription.isNotBlank()) {
                         Text(
                             text = "Transcripción: ${latestAudioReport.transcription.take(260)}…",
                             style = MaterialTheme.typography.labelSmall,
-                            color = WarmSilver
+                            color = colors.onSecondaryContainer.copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -524,7 +518,7 @@ fun SourceIngestContent(
             Text(
                 text = stringResource(R.string.ingest_text_label),
                 style = MaterialTheme.typography.labelMedium,
-                color = WarmSilver
+                color = colors.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(
@@ -542,9 +536,9 @@ fun SourceIngestContent(
                     },
                     modifier = Modifier.testTag("ingest_paste_source_button")
                 ) {
-                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(4.dp))
-                    Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                    Text("Pegar", color = colors.primary, style = MaterialTheme.typography.labelSmall)
                 }
                 TextButton(
                     onClick = {
@@ -559,9 +553,9 @@ fun SourceIngestContent(
                     },
                     modifier = Modifier.testTag("ingest_load_sample_button")
                 ) {
-                    Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(4.dp))
-                    Text("Ejemplo", color = TealAtmos, style = MaterialTheme.typography.labelSmall)
+                    Text("Ejemplo", color = colors.secondary, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -570,7 +564,7 @@ fun SourceIngestContent(
             Text(
                 text = clipboardNotice!!,
                 style = MaterialTheme.typography.labelSmall,
-                color = TealAtmos
+                color = colors.secondary
             )
         }
 
@@ -579,7 +573,12 @@ fun SourceIngestContent(
             onValueChange = { value ->
                 onDraftChange { it.copy(sourceText = value, ingestError = null) }
             },
-            placeholder = { Text(stringResource(R.string.ingest_text_hint), color = MutedStone) },
+            placeholder = {
+                Text(
+                    stringResource(R.string.ingest_text_hint),
+                    color = colors.onSurfaceVariant.copy(alpha = 0.72f)
+                )
+            },
             minLines = 4,
             maxLines = 8,
             colors = fieldColors(),
@@ -590,11 +589,11 @@ fun SourceIngestContent(
 
         // Continuity Bible Editor
         Surface(
-            color = StudioDeepPanel,
+            color = colors.surfaceVariant,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+                .border(1.dp, colors.outline, RoundedCornerShape(12.dp))
         ) {
             Column(
                 modifier = Modifier.padding(12.dp),
@@ -608,7 +607,7 @@ fun SourceIngestContent(
                     Text(
                         text = stringResource(R.string.bible_title),
                         style = MaterialTheme.typography.labelLarge,
-                        color = IvoryPrimary,
+                        color = colors.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(
@@ -625,17 +624,17 @@ fun SourceIngestContent(
                         },
                         modifier = Modifier.testTag("ingest_paste_bible_button")
                     ) {
-                        Icon(Icons.Rounded.ContentPaste, contentDescription = "Pegar en Biblia", tint = WarmSilver, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Rounded.ContentPaste, contentDescription = "Pegar en Biblia", tint = colors.onSurfaceVariant, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("Pegar", color = WarmSilver, style = MaterialTheme.typography.labelSmall)
+                        Text("Pegar", color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                     }
                     OutlinedButton(
                         onClick = { onSaveBible(draft.continuityBible) },
                         modifier = Modifier.testTag("save_bible_button")
                     ) {
-                        Icon(Icons.Rounded.Save, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.Save, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text(stringResource(R.string.bible_save_cta), color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.bible_save_cta), color = colors.primary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 OutlinedTextField(
@@ -643,7 +642,12 @@ fun SourceIngestContent(
                     onValueChange = { value ->
                         onDraftChange { it.copy(continuityBible = value) }
                     },
-                    placeholder = { Text(stringResource(R.string.bible_hint), color = MutedStone) },
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.bible_hint),
+                            color = colors.onSurfaceVariant.copy(alpha = 0.72f)
+                        )
+                    },
                     minLines = 3,
                     maxLines = 6,
                     colors = fieldColors(),
@@ -656,9 +660,9 @@ fun SourceIngestContent(
         }
 
         // Pinned Footer: Error Banner + Primary AI Produce + Secondary Manual Draft CTA
-        HorizontalDivider(color = StudioBorder)
+        HorizontalDivider(color = colors.outline)
         Surface(
-            color = StudioDeepPanel,
+            color = colors.surfaceVariant,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -669,7 +673,7 @@ fun SourceIngestContent(
             ) {
                 if (!draft.ingestError.isNullOrBlank()) {
                     Surface(
-                        color = ErrorContainerDark,
+                        color = colors.errorContainer,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -678,7 +682,7 @@ fun SourceIngestContent(
                         Text(
                             text = draft.ingestError,
                             style = MaterialTheme.typography.bodySmall,
-                            color = ErrorLightText,
+                            color = colors.onErrorContainer,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -688,8 +692,8 @@ fun SourceIngestContent(
                     onClick = onProduceSequence,
                     enabled = !isProducing && !isAnalyzingAudio,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AmberGold,
-                        contentColor = ObsidianBg
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -698,7 +702,7 @@ fun SourceIngestContent(
                         .testTag("produce_sequence_button")
                 ) {
                     if (isProducing) {
-                        CircularProgressIndicator(strokeWidth = 2.dp, color = ObsidianBg, modifier = Modifier.size(18.dp))
+                        CircularProgressIndicator(strokeWidth = 2.dp, color = colors.onPrimary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(8.dp))
                         Text(stringResource(R.string.ingest_producing), fontWeight = FontWeight.Bold)
                     } else {
@@ -717,9 +721,9 @@ fun SourceIngestContent(
                         .height(48.dp)
                         .testTag("create_manual_draft_button")
                 ) {
-                    Icon(Icons.Rounded.EditNote, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.EditNote, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Crear borrador manual (sin IA) en Guion", color = TealAtmos, fontWeight = FontWeight.SemiBold)
+                    Text("Crear borrador manual (sin IA) en Guion", color = colors.secondary, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -727,22 +731,28 @@ fun SourceIngestContent(
 }
 
 @Composable
-private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = AmberGold,
-    unfocusedBorderColor = StudioBorder,
-    focusedTextColor = IvoryPrimary,
-    unfocusedTextColor = IvoryPrimary,
-    focusedLabelColor = AmberGold,
-    unfocusedLabelColor = MutedStone
-)
+private fun fieldColors(): androidx.compose.material3.TextFieldColors {
+    val colors = MaterialTheme.colorScheme
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primary,
+        unfocusedBorderColor = colors.outline,
+        focusedTextColor = colors.onSurface,
+        unfocusedTextColor = colors.onSurface,
+        focusedLabelColor = colors.primary,
+        unfocusedLabelColor = colors.onSurfaceVariant.copy(alpha = 0.78f)
+    )
+}
 
 @Composable
-private fun chipColors() = FilterChipDefaults.filterChipColors(
-    selectedContainerColor = AmberContainer,
-    selectedLabelColor = AmberGold,
-    containerColor = StudioDeepPanel,
-    labelColor = WarmSilver
-)
+private fun chipColors(): androidx.compose.material3.SelectableChipColors {
+    val colors = MaterialTheme.colorScheme
+    return FilterChipDefaults.filterChipColors(
+        selectedContainerColor = colors.primaryContainer,
+        selectedLabelColor = colors.onPrimaryContainer,
+        containerColor = colors.surfaceVariant,
+        labelColor = colors.onSurfaceVariant
+    )
+}
 
 internal fun readClipboardText(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null

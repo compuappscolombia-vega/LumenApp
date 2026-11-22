@@ -118,24 +118,11 @@ import com.example.ui.components.AddProductionFolderDialog
 import com.example.ui.components.AgentBlueprintDialog
 import com.example.ui.components.LearningMemoryDialog
 import com.example.ui.components.NewProjectDialog
+import com.example.ui.components.ProductionCalendarDialog
 import com.example.ui.components.ProductionFolderDetailDialog
 import com.example.ui.components.SourceIngestModalSheet
 import com.example.ui.components.StudioLoadingOverlay
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.ErrorContainerDark
-import com.example.ui.theme.ErrorLightText
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurface
-import com.example.ui.theme.StudioSurfaceElevated
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
+import com.example.ui.theme.LumenReelTheme
 import com.example.ui.viewmodel.StudioUiState
 import com.example.ui.viewmodel.StudioViewModel
 import com.example.ui.viewmodel.UiState
@@ -164,15 +151,19 @@ fun MainStudioScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(ObsidianBg),
+                    .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(color = AmberGold)
-                    Text("Cargando estudio cinematográfico…", style = MaterialTheme.typography.bodyMedium, color = WarmSilver)
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Cargando estudio cinematográfico…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -180,12 +171,12 @@ fun MainStudioScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(ObsidianBg)
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
-                    color = ErrorContainerDark,
+                    color = MaterialTheme.colorScheme.errorContainer,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.widthIn(max = 460.dp)
                 ) {
@@ -193,11 +184,22 @@ fun MainStudioScreen(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Error de conexión con el estudio", style = MaterialTheme.typography.titleMedium, color = ErrorLightText)
-                        Text(state.message, style = MaterialTheme.typography.bodyMedium, color = IvoryPrimary)
+                        Text(
+                            "Error de conexión con el estudio",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            state.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
                         if (currentUser != null) {
                             OutlinedButton(onClick = onSignOut) {
-                                Text(stringResource(R.string.action_sign_out), color = IvoryPrimary)
+                                Text(
+                                    stringResource(R.string.action_sign_out),
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             }
                         }
                     }
@@ -320,8 +322,13 @@ private fun StudioWorkspaceShell(
                 vm.setShowDashboard(true)
             }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ObsidianBg)) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             val isWideTablet = maxWidth >= 840.dp
+            val colors = MaterialTheme.colorScheme
 
             val drawerContent: @Composable () -> Unit = {
                 StudioDrawerContent(
@@ -360,12 +367,12 @@ private fun StudioWorkspaceShell(
 
         val scaffoldBody: @Composable () -> Unit = {
             Scaffold(
-                containerColor = ObsidianBg,
+                containerColor = colors.background,
                 topBar = {
                     TopAppBar(
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = StudioSurface,
-                            titleContentColor = IvoryPrimary
+                            containerColor = colors.surface,
+                            titleContentColor = colors.onSurface
                         ),
                         navigationIcon = {
                             if (!isWideTablet) {
@@ -376,7 +383,7 @@ private fun StudioWorkspaceShell(
                                     Icon(
                                         imageVector = Icons.Rounded.Menu,
                                         contentDescription = stringResource(R.string.cd_open_drawer),
-                                        tint = IvoryPrimary
+                                        tint = colors.onSurface
                                     )
                                 }
                             }
@@ -402,18 +409,18 @@ private fun StudioWorkspaceShell(
                                             Text(
                                                 text = seq.title,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = AmberGold,
+                                                color = colors.primary,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Surface(
-                                                color = if (seq.versionStatus == SequenceVersionStatus.FINAL) TealContainer else AmberContainer,
+                                                color = if (seq.versionStatus == SequenceVersionStatus.FINAL) colors.secondaryContainer else colors.primaryContainer,
                                                 shape = RoundedCornerShape(6.dp)
                                             ) {
                                                 Text(
                                                     text = if (seq.versionStatus == SequenceVersionStatus.FINAL) "FINAL" else "BORRADOR",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = if (seq.versionStatus == SequenceVersionStatus.FINAL) TealAtmos else AmberGold,
+                                                    color = if (seq.versionStatus == SequenceVersionStatus.FINAL) colors.onSecondaryContainer else colors.onPrimaryContainer,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
                                             }
@@ -444,8 +451,8 @@ private fun StudioWorkspaceShell(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Brightness6,
-                                    contentDescription = "Cambiar tema de color",
-                                    tint = AmberGold
+                                    contentDescription = if (ui.isDarkMode) "Cambiar a modo claro" else "Cambiar a modo oscuro",
+                                    tint = colors.primary
                                 )
                             }
                             IconButton(
@@ -455,7 +462,7 @@ private fun StudioWorkspaceShell(
                                 Icon(
                                     imageVector = Icons.Rounded.CalendarMonth,
                                     contentDescription = "Calendario de producción",
-                                    tint = AmberGold
+                                    tint = colors.primary
                                 )
                             }
                             IconButton(
@@ -465,7 +472,7 @@ private fun StudioWorkspaceShell(
                                 Icon(
                                     imageVector = Icons.Rounded.GridView,
                                     contentDescription = stringResource(R.string.action_open_dashboard),
-                                    tint = IvoryPrimary
+                                    tint = colors.onSurface
                                 )
                             }
                             val activeProj = ui.activeProject
@@ -478,7 +485,7 @@ private fun StudioWorkspaceShell(
                                     Icon(
                                         imageVector = Icons.Rounded.Tune,
                                         contentDescription = stringResource(R.string.cd_open_ingest),
-                                        tint = AmberGold
+                                        tint = colors.primary
                                     )
                                 }
                             }
@@ -491,7 +498,7 @@ private fun StudioWorkspaceShell(
                                     Icon(
                                         imageVector = Icons.Rounded.CheckCircle,
                                         contentDescription = stringResource(R.string.action_approve_final),
-                                        tint = TealAtmos
+                                        tint = colors.secondary
                                     )
                                 }
                             }
@@ -503,13 +510,31 @@ private fun StudioWorkspaceShell(
                                     Icon(
                                         imageVector = Icons.Rounded.MoreVert,
                                         contentDescription = "Más acciones del estudio",
-                                        tint = IvoryPrimary
+                                        tint = colors.onSurface
                                     )
                                 }
                                 DropdownMenu(
                                     expanded = overflowExpanded,
                                     onDismissRequest = { overflowExpanded = false }
                                 ) {
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Rounded.Brightness6, contentDescription = null) },
+                                        text = { Text(if (ui.isDarkMode) "Cambiar a modo claro" else "Cambiar a modo oscuro") },
+                                        onClick = {
+                                            overflowExpanded = false
+                                            vm.toggleDarkMode()
+                                        },
+                                        modifier = Modifier.testTag("studio_theme_menu_item")
+                                    )
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null) },
+                                        text = { Text("Calendario de producción") },
+                                        onClick = {
+                                            overflowExpanded = false
+                                            vm.setShowCalendarDialog(true)
+                                        },
+                                        modifier = Modifier.testTag("studio_calendar_menu_item")
+                                    )
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.Insights, contentDescription = null) },
                                         text = { Text("Analítica del estudio") },
@@ -553,7 +578,7 @@ private fun StudioWorkspaceShell(
                                     )
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
-                                        text = { Text(currentUser?.displayName ?: "Perfil Google") },
+                                        text = { Text(currentUser?.displayName ?: "Perfil y Configuración") },
                                         onClick = {
                                             overflowExpanded = false
                                             showAccountDialog = true
@@ -567,9 +592,9 @@ private fun StudioWorkspaceShell(
                 bottomBar = {
                     if (!isWideTablet && ui.activeProject != null) {
                         NavigationBar(
-                            containerColor = StudioSurface,
+                            containerColor = colors.surface,
                             modifier = Modifier
-                                .border(1.dp, StudioBorder)
+                                .border(1.dp, colors.outline)
                                 .windowInsetsPadding(WindowInsets.navigationBars)
                         ) {
                             STUDIO_TABS.forEach { tabMeta ->
@@ -587,11 +612,11 @@ private fun StudioWorkspaceShell(
                                         )
                                     },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = AmberGold,
-                                        selectedTextColor = AmberGold,
-                                        indicatorColor = AmberContainer,
-                                        unselectedIconColor = MutedStone,
-                                        unselectedTextColor = MutedStone
+                                        selectedIconColor = colors.primary,
+                                        selectedTextColor = colors.primary,
+                                        indicatorColor = colors.primaryContainer,
+                                        unselectedIconColor = colors.onSurfaceVariant,
+                                        unselectedTextColor = colors.onSurfaceVariant
                                     ),
                                     modifier = Modifier.testTag("nav_tab_${tabMeta.tab.routeKey}")
                                 )
@@ -607,8 +632,8 @@ private fun StudioWorkspaceShell(
                 ) {
                     if (isWideTablet && ui.activeProject != null) {
                         NavigationRail(
-                            containerColor = StudioSurface,
-                            modifier = Modifier.fillMaxHeight().border(1.dp, StudioBorder)
+                            containerColor = colors.surface,
+                            modifier = Modifier.fillMaxHeight().border(1.dp, colors.outline)
                         ) {
                             STUDIO_TABS.forEach { tabMeta ->
                                 NavigationRailItem(
@@ -617,11 +642,11 @@ private fun StudioWorkspaceShell(
                                     icon = { Icon(tabMeta.icon, contentDescription = stringResource(tabMeta.labelRes)) },
                                     label = { Text(stringResource(tabMeta.labelRes), style = MaterialTheme.typography.labelSmall) },
                                     colors = NavigationRailItemDefaults.colors(
-                                        selectedIconColor = AmberGold,
-                                        selectedTextColor = AmberGold,
-                                        indicatorColor = AmberContainer,
-                                        unselectedIconColor = MutedStone,
-                                        unselectedTextColor = MutedStone
+                                        selectedIconColor = colors.primary,
+                                        selectedTextColor = colors.primary,
+                                        indicatorColor = colors.primaryContainer,
+                                        unselectedIconColor = colors.onSurfaceVariant,
+                                        unselectedTextColor = colors.onSurfaceVariant
                                     ),
                                     modifier = Modifier.testTag("rail_tab_${tabMeta.tab.routeKey}")
                                 )
@@ -777,7 +802,7 @@ private fun StudioWorkspaceShell(
             PermanentNavigationDrawer(
                 drawerContent = {
                     PermanentDrawerSheet(
-                        drawerContainerColor = StudioSurface,
+                        drawerContainerColor = colors.surface,
                         modifier = Modifier.width(290.dp)
                     ) { drawerContent() }
                 },
@@ -788,7 +813,7 @@ private fun StudioWorkspaceShell(
                 drawerState = drawerState,
                 drawerContent = {
                     ModalDrawerSheet(
-                        drawerContainerColor = StudioSurface,
+                        drawerContainerColor = colors.surface,
                         modifier = Modifier.width(300.dp)
                     ) { drawerContent() }
                 },
@@ -898,8 +923,11 @@ private fun StudioWorkspaceShell(
     if (showAccountDialog) {
         AccountDialog(
             user = currentUser,
-            preferredStyle = ui.userProfile?.preferredStyle.orEmpty(),
-            onSavePreferredStyle = vm::updatePreferredStyle,
+            preferredStyle = ui.studioConfig.preferredStyle.ifBlank { ui.userProfile?.preferredStyle.orEmpty() },
+            studioConfig = ui.studioConfig,
+            isDarkMode = ui.isDarkMode,
+            onToggleDarkMode = vm::toggleDarkMode,
+            onSaveStudioConfig = vm::updateStudioConfig,
             authStatusMessage = authStatusMessage,
             onClearAuthStatus = onClearAuthStatus,
             onOptionalGoogleSignIn = onOptionalGoogleSignIn,
@@ -911,11 +939,27 @@ private fun StudioWorkspaceShell(
     if (ui.showCalendarDialog) {
         ProductionCalendarDialog(
             project = ui.activeProject,
+            milestones = ui.milestones,
             onDismiss = { vm.setShowCalendarDialog(false) },
             onSelectSequence = { seqId ->
                 vm.selectSequence(seqId)
                 vm.setShowDashboard(false)
                 vm.setShowCalendarDialog(false)
+            },
+            onAddMilestone = { title, notes, dateMillis, type, seqId ->
+                ui.activeProject?.let { proj ->
+                    vm.addMilestone(proj.id, title, notes, dateMillis, type, seqId)
+                }
+            },
+            onToggleMilestone = { milestoneId, completed ->
+                ui.activeProject?.let { proj ->
+                    vm.toggleMilestoneCompleted(proj.id, milestoneId, completed)
+                }
+            },
+            onDeleteMilestone = { milestoneId ->
+                ui.activeProject?.let { proj ->
+                    vm.deleteMilestone(proj.id, milestoneId)
+                }
             }
         )
     }
@@ -925,7 +969,8 @@ private fun StudioWorkspaceShell(
         headline = loaderHeadline,
         subtitle = loaderSubtitle
     )
-  }
+        }
+    }
 }
 
 @Composable
@@ -943,6 +988,7 @@ private fun StudioDrawerContent(
     onAddFolderClick: () -> Unit,
     onCreateProjectClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val filtered = remember(projects, searchQuery) {
         StudioLogic.filterProjects(projects, searchQuery)
     }
@@ -969,29 +1015,29 @@ private fun StudioDrawerContent(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(7.dp))
-                        .border(1.dp, AmberGold.copy(alpha = 0.65f), RoundedCornerShape(7.dp))
+                        .border(1.dp, colors.primary.copy(alpha = 0.65f), RoundedCornerShape(7.dp))
                 )
-                Text(stringResource(R.string.studio_brand_title), style = MaterialTheme.typography.titleMedium, color = IvoryPrimary)
+                Text(stringResource(R.string.studio_brand_title), style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
             }
             IconButton(
                 onClick = onOpenDashboard,
                 modifier = Modifier.testTag("drawer_open_dashboard_button")
             ) {
-                Icon(Icons.Rounded.GridView, contentDescription = stringResource(R.string.action_open_dashboard), tint = AmberGold)
+                Icon(Icons.Rounded.GridView, contentDescription = stringResource(R.string.action_open_dashboard), tint = colors.primary)
             }
         }
 
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchChange,
-            placeholder = { Text(stringResource(R.string.search_projects_hint), style = MaterialTheme.typography.bodySmall, color = MutedStone) },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MutedStone) },
+            placeholder = { Text(stringResource(R.string.search_projects_hint), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.onSurfaceVariant) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = AmberGold,
-                unfocusedBorderColor = StudioBorder,
-                focusedTextColor = IvoryPrimary,
-                unfocusedTextColor = IvoryPrimary
+                focusedBorderColor = colors.primary,
+                unfocusedBorderColor = colors.outline,
+                focusedTextColor = colors.onSurface,
+                unfocusedTextColor = colors.onSurface
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1000,7 +1046,7 @@ private fun StudioDrawerContent(
 
         Button(
             onClick = onCreateProjectClick,
-            colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+            colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1026,11 +1072,11 @@ private fun StudioDrawerContent(
                     ProjectTemplateCatalog.findById(proj.templateId)
                 }
                 Surface(
-                    color = if (isSelected) AmberContainer else StudioDeepPanel,
+                    color = if (isSelected) colors.primaryContainer else colors.surfaceVariant,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, if (isSelected) AmberGold else StudioBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, if (isSelected) colors.primary else colors.outline, RoundedCornerShape(12.dp))
                         .clickable { onSelectProject(proj.id) }
                         .testTag("project_item_${proj.id}")
                 ) {
@@ -1043,7 +1089,7 @@ private fun StudioDrawerContent(
                             Text(
                                 text = proj.title,
                                 style = MaterialTheme.typography.labelLarge,
-                                color = if (isSelected) AmberGold else IvoryPrimary,
+                                color = if (isSelected) colors.onPrimaryContainer else colors.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
@@ -1052,13 +1098,13 @@ private fun StudioDrawerContent(
                                 onClick = { onDeleteProject(proj.id) },
                                 modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Eliminar producción", tint = MutedStone, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Eliminar producción", tint = colors.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                         }
                         Text(
                             text = "${templateMeta.name} · ${proj.genreStyle}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MutedStone,
+                            color = if (isSelected) colors.onPrimaryContainer.copy(alpha = 0.8f) else colors.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1077,7 +1123,7 @@ private fun StudioDrawerContent(
                                     Text(
                                         text = "Carpetas de producción (${folders.size})",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = TealAtmos,
+                                        color = colors.secondary,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     IconButton(
@@ -1089,14 +1135,14 @@ private fun StudioDrawerContent(
                                         Icon(
                                             imageVector = Icons.Rounded.CreateNewFolder,
                                             contentDescription = "Añadir carpeta",
-                                            tint = AmberGold,
+                                            tint = colors.primary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
                                 }
                                 folders.forEach { folder ->
                                     Surface(
-                                        color = StudioCard,
+                                        color = colors.surface,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1111,13 +1157,13 @@ private fun StudioDrawerContent(
                                             Icon(
                                                 imageVector = Icons.Rounded.Folder,
                                                 contentDescription = null,
-                                                tint = AmberGold,
+                                                tint = colors.primary,
                                                 modifier = Modifier.size(15.dp)
                                             )
                                             Text(
                                                 text = folder.name,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = IvoryPrimary,
+                                                color = colors.onSurface,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f)
@@ -1135,13 +1181,13 @@ private fun StudioDrawerContent(
                                 Text(
                                     text = "Secuencias (${proj.sequences.size})",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = WarmSilver,
+                                    color = colors.onSurfaceVariant,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 proj.sequences.forEach { seq ->
                                     val seqActive = seq.id == activeSequenceId
                                     Surface(
-                                        color = if (seqActive) StudioSurfaceElevated else StudioCard,
+                                        color = if (seqActive) colors.secondaryContainer else colors.surface,
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1150,7 +1196,7 @@ private fun StudioDrawerContent(
                                         Text(
                                             text = "${seq.title} · ${if (seq.versionStatus == SequenceVersionStatus.FINAL) "Final" else "Borrador"}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = if (seqActive) TealAtmos else WarmSilver,
+                                            color = if (seqActive) colors.onSecondaryContainer else colors.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
@@ -1172,8 +1218,9 @@ private fun BannerBar(
     isError: Boolean,
     onDismiss: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = if (isError) ErrorContainerDark else TealContainer,
+        color = if (isError) colors.errorContainer else colors.secondaryContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1186,11 +1233,16 @@ private fun BannerBar(
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (isError) ErrorLightText else IvoryPrimary,
+                color = if (isError) colors.onErrorContainer else colors.onSecondaryContainer,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Rounded.Close, contentDescription = "Cerrar aviso", tint = IvoryPrimary, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "Cerrar aviso",
+                    tint = if (isError) colors.onErrorContainer else colors.onSecondaryContainer,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
@@ -1207,6 +1259,7 @@ private fun EmptyStudioState(
     onSecondaryCtaClick: (() -> Unit)? = null,
     secondaryCtaTag: String? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1214,24 +1267,24 @@ private fun EmptyStudioState(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            color = StudioCard,
+            color = colors.surface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .widthIn(max = 460.dp)
-                .border(1.dp, StudioBorder, RoundedCornerShape(16.dp))
+                .border(1.dp, colors.outline, RoundedCornerShape(16.dp))
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Rounded.Movie, contentDescription = null, tint = AmberGold, modifier = Modifier.size(38.dp))
-                Text(title, style = MaterialTheme.typography.titleLarge, color = IvoryPrimary)
-                Text(body, style = MaterialTheme.typography.bodyMedium, color = MutedStone)
+                Icon(Icons.Rounded.Movie, contentDescription = null, tint = colors.primary, modifier = Modifier.size(38.dp))
+                Text(title, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
+                Text(body, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                 Spacer(Modifier.height(4.dp))
                 Button(
                     onClick = onCtaClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1249,7 +1302,7 @@ private fun EmptyStudioState(
                             .height(48.dp)
                             .let { if (secondaryCtaTag != null) it.testTag(secondaryCtaTag) else it }
                     ) {
-                        Text(secondaryCtaLabel, color = TealAtmos, fontWeight = FontWeight.SemiBold)
+                        Text(secondaryCtaLabel, color = colors.secondary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

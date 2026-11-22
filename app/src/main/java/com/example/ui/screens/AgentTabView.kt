@@ -54,18 +54,6 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.util.AgentLogic
 import com.example.ui.components.readClipboardText
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurfaceElevated
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 
 @Composable
 fun AgentTabView(
@@ -82,6 +70,7 @@ fun AgentTabView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {
@@ -109,7 +98,7 @@ fun AgentTabView(
                 modifier = Modifier.weight(1f)
             ) {
                 Surface(
-                    color = AmberContainer,
+                    color = colors.primaryContainer,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
@@ -117,7 +106,7 @@ fun AgentTabView(
                         Icon(
                             imageVector = Icons.Rounded.SmartToy,
                             contentDescription = "Agente Tripartito LumenReel",
-                            tint = AmberGold,
+                            tint = colors.onPrimaryContainer,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -126,13 +115,13 @@ fun AgentTabView(
                     Text(
                         text = "Agente Tripartito Autónomo",
                         style = MaterialTheme.typography.titleMedium,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                     Text(
                         text = activeSequence?.let { "Trabajando sobre: ${it.title}" }
                             ?: "Preproducción · Biblia y estructura base",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
             }
@@ -145,11 +134,15 @@ fun AgentTabView(
                     Icon(
                         imageVector = Icons.Rounded.DeleteSweep,
                         contentDescription = "Reiniciar historial",
-                        tint = MutedStone,
+                        tint = colors.onSurfaceVariant.copy(alpha = 0.78f),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.size(4.dp))
-                    Text("Limpiar", color = MutedStone, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "Limpiar",
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
             }
         }
@@ -173,16 +166,16 @@ fun AgentTabView(
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AmberContainer,
-                        selectedLabelColor = AmberGold,
-                        containerColor = StudioCard,
-                        labelColor = WarmSilver
+                        selectedContainerColor = colors.primaryContainer,
+                        selectedLabelColor = colors.onPrimaryContainer,
+                        containerColor = colors.surface,
+                        labelColor = colors.onSurfaceVariant
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         enabled = true,
                         selected = selected,
-                        borderColor = StudioBorder,
-                        selectedBorderColor = AmberGold.copy(alpha = 0.65f)
+                        borderColor = colors.outline,
+                        selectedBorderColor = colors.primary.copy(alpha = 0.65f)
                     ),
                     modifier = Modifier.testTag("agent_focus_${profile.id.wireValue}")
                 )
@@ -193,7 +186,7 @@ fun AgentTabView(
         Text(
             text = "${activeProfile.badge} — ${activeProfile.description}",
             style = MaterialTheme.typography.bodySmall,
-            color = MutedStone
+            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
         )
 
         // Messages List or Quick Commands
@@ -208,11 +201,11 @@ fun AgentTabView(
             if (messages.isEmpty()) {
                 item {
                     Surface(
-                        color = StudioCard,
+                        color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+                            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -225,22 +218,22 @@ fun AgentTabView(
                                 Icon(
                                     imageVector = Icons.Rounded.AutoAwesome,
                                     contentDescription = null,
-                                    tint = AmberGold,
+                                    tint = colors.primary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
                                     text = "Comandos rápidos de producción",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = AmberGold
+                                    color = colors.primary
                                 )
                             }
                             AgentLogic.AGENT_QUICK_COMMANDS.forEach { cmd ->
                                 Surface(
-                                    color = StudioDeepPanel,
+                                    color = colors.surfaceVariant,
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                                        .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                                         .clickable(enabled = !isBusy) {
                                             onFocusChange(cmd.focus)
                                             onSendMessage(cmd.focus, cmd.prompt)
@@ -254,12 +247,12 @@ fun AgentTabView(
                                         Text(
                                             text = cmd.title,
                                             style = MaterialTheme.typography.labelLarge,
-                                            color = IvoryPrimary
+                                            color = colors.onSurface
                                         )
                                         Text(
                                             text = cmd.prompt,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MutedStone
+                                            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                                         )
                                     }
                                 }
@@ -276,9 +269,9 @@ fun AgentTabView(
             if (isBusy) {
                 item {
                     Surface(
-                        color = StudioCard,
+                        color = colors.surface,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+                        modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(12.dp))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -287,13 +280,13 @@ fun AgentTabView(
                         ) {
                             CircularProgressIndicator(
                                 strokeWidth = 2.dp,
-                                color = AmberGold,
+                                color = colors.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
                                 text = "El consejo creativo está evaluando y actualizando el expediente…",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = WarmSilver
+                                color = colors.onSurfaceVariant
                             )
                         }
                     }
@@ -314,17 +307,17 @@ fun AgentTabView(
                     Text(
                         text = "Pide cambios de dirección, guion, VFX/SFX o Biblia…",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.72f)
                     )
                 },
                 maxLines = 4,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AmberGold,
-                    unfocusedBorderColor = StudioBorder,
-                    focusedContainerColor = StudioCard,
-                    unfocusedContainerColor = StudioCard,
-                    focusedTextColor = IvoryPrimary,
-                    unfocusedTextColor = IvoryPrimary
+                    focusedBorderColor = colors.primary,
+                    unfocusedBorderColor = colors.outline,
+                    focusedContainerColor = colors.surface,
+                    unfocusedContainerColor = colors.surface,
+                    focusedTextColor = colors.onSurface,
+                    unfocusedTextColor = colors.onSurface
                 ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
@@ -332,11 +325,11 @@ fun AgentTabView(
                     .testTag("agent_message_input")
             )
             Surface(
-                color = StudioCard,
+                color = colors.surface,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .size(52.dp)
-                    .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+                    .border(1.dp, colors.outline, RoundedCornerShape(12.dp))
             ) {
                 IconButton(
                     onClick = {
@@ -352,12 +345,12 @@ fun AgentTabView(
                     Icon(
                         imageVector = Icons.Rounded.ContentPaste,
                         contentDescription = "Pegar texto del portapapeles",
-                        tint = WarmSilver
+                        tint = colors.onSurfaceVariant
                     )
                 }
             }
             Surface(
-                color = if (draftMessage.isNotBlank() && !isBusy) AmberGold else StudioSurfaceElevated,
+                color = if (draftMessage.isNotBlank() && !isBusy) colors.primary else colors.surfaceVariant,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.size(52.dp)
             ) {
@@ -377,7 +370,7 @@ fun AgentTabView(
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.Send,
                         contentDescription = "Enviar instrucción al agente",
-                        tint = if (draftMessage.isNotBlank() && !isBusy) ObsidianBg else MutedStone
+                        tint = if (draftMessage.isNotBlank() && !isBusy) colors.onPrimary else colors.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 }
             }
@@ -388,18 +381,19 @@ fun AgentTabView(
 @Composable
 private fun AgentMessageBubble(msg: AgentMessage) {
     val isUser = msg.role == "user"
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
-            color = if (isUser) AmberContainer else StudioCard,
+            color = if (isUser) colors.primaryContainer else colors.surface,
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .widthIn(max = 580.dp)
                 .border(
                     width = 1.dp,
-                    color = if (isUser) AmberGold.copy(alpha = 0.45f) else StudioBorder,
+                    color = if (isUser) colors.primary.copy(alpha = 0.45f) else colors.outline,
                     shape = RoundedCornerShape(14.dp)
                 )
         ) {
@@ -414,7 +408,7 @@ private fun AgentMessageBubble(msg: AgentMessage) {
                     Text(
                         text = if (isUser) "TÚ" else "LUMENREEL · ${msg.focus.wireValue.uppercase()}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isUser) AmberGold else TealAtmos,
+                        color = if (isUser) colors.onPrimaryContainer else colors.secondary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -422,18 +416,18 @@ private fun AgentMessageBubble(msg: AgentMessage) {
                 Text(
                     text = msg.content,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = IvoryPrimary
+                    color = if (isUser) colors.onPrimaryContainer else colors.onSurface
                 )
 
                 if (msg.actions.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         msg.actions.forEach { act ->
                             Surface(
-                                color = TealContainer,
+                                color = colors.secondaryContainer,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .border(1.dp, TealAtmos.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, colors.secondary.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -443,13 +437,13 @@ private fun AgentMessageBubble(msg: AgentMessage) {
                                     Icon(
                                         imageVector = Icons.Rounded.Build,
                                         contentDescription = null,
-                                        tint = TealAtmos,
+                                        tint = colors.secondary,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = "[${act.affectedArea.uppercase()}] ${act.summary}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = IvoryPrimary
+                                        color = colors.onSecondaryContainer
                                     )
                                 }
                             }

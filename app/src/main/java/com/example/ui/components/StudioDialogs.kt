@@ -1,15 +1,15 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,21 +65,12 @@ import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.ProductionFolder
 import com.example.data.model.SourceMaterialType
+import com.example.data.model.ThinkingDepth
+import com.example.data.model.UserStudioConfig
 import com.example.data.util.LearningEngine
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.screens.copyToClipboard
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.ErrorCrimson
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.WarmSilver
 import com.google.firebase.auth.FirebaseUser
 
 @Composable
@@ -93,6 +85,7 @@ fun NewProjectDialog(
         productionFolders: List<ProductionFolder>
     ) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val templates = remember { ProjectTemplateCatalog.ALL_TEMPLATES }
     var selectedTemplateId by remember { mutableStateOf(templates.first().id) }
     val selectedTemplate = remember(selectedTemplateId) {
@@ -107,9 +100,9 @@ fun NewProjectDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = { Text("Nueva Producción Cinematográfica") },
         text = {
             Column(
@@ -125,13 +118,13 @@ fun NewProjectDialog(
                     Icon(
                         imageVector = Icons.Rounded.AutoAwesomeMotion,
                         contentDescription = null,
-                        tint = AmberGold,
+                        tint = colors.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = "Biblioteca de plantillas de proyecto",
                         style = MaterialTheme.typography.labelLarge,
-                        color = IvoryPrimary,
+                        color = colors.onSurface,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -145,13 +138,13 @@ fun NewProjectDialog(
                     templates.forEach { template ->
                         val selected = template.id == selectedTemplateId
                         Surface(
-                            color = if (selected) AmberContainer else StudioDeepPanel,
+                            color = if (selected) colors.primaryContainer else colors.surfaceVariant,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .width(196.dp)
                                 .border(
                                     width = if (selected) 1.5.dp else 1.dp,
-                                    color = if (selected) AmberGold else StudioBorder,
+                                    color = if (selected) colors.primary else colors.outline,
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
@@ -176,7 +169,7 @@ fun NewProjectDialog(
                                     Text(
                                         text = template.badge,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (selected) AmberGold else TealAtmos,
+                                        color = if (selected) colors.onPrimaryContainer else colors.secondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
@@ -185,7 +178,7 @@ fun NewProjectDialog(
                                         Icon(
                                             imageVector = Icons.Rounded.CheckCircle,
                                             contentDescription = "Plantilla seleccionada",
-                                            tint = AmberGold,
+                                            tint = colors.primary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -193,7 +186,7 @@ fun NewProjectDialog(
                                 Text(
                                     text = template.name,
                                     style = MaterialTheme.typography.titleSmall,
-                                    color = IvoryPrimary,
+                                    color = if (selected) colors.onPrimaryContainer else colors.onSurface,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -201,12 +194,12 @@ fun NewProjectDialog(
                                 Text(
                                     text = "${template.folders.size} carpetas · ${template.aspectRatio}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = WarmSilver
+                                    color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant
                                 )
                                 Text(
                                     text = template.tagline,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MutedStone,
+                                    color = if (selected) colors.onPrimaryContainer.copy(alpha = 0.85f) else colors.onSurfaceVariant,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -215,13 +208,12 @@ fun NewProjectDialog(
                     }
                 }
 
-                // Auto-initialized production folders preview
                 Surface(
-                    color = StudioDeepPanel,
+                    color = colors.surfaceVariant,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, TealAtmos.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .border(1.dp, colors.secondary.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                         .testTag("new_project_folders_preview")
                 ) {
                     Column(
@@ -231,13 +223,13 @@ fun NewProjectDialog(
                         Text(
                             text = "Carpetas de producción automáticas (${selectedTemplate.folders.size})",
                             style = MaterialTheme.typography.labelMedium,
-                            color = TealAtmos,
+                            color = colors.secondary,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = "${selectedTemplate.cameraRecommendation} · ${selectedTemplate.description}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MutedStone
+                            color = colors.onSurfaceVariant
                         )
                         selectedTemplate.folders.forEach { folder ->
                             Row(
@@ -248,14 +240,14 @@ fun NewProjectDialog(
                                 Icon(
                                     imageVector = Icons.Rounded.Folder,
                                     contentDescription = null,
-                                    tint = AmberGold,
+                                    tint = colors.primary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = folder.name,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = IvoryPrimary,
+                                        color = colors.onSurface,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -263,7 +255,7 @@ fun NewProjectDialog(
                                     Text(
                                         text = folder.description,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MutedStone,
+                                        color = colors.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -277,7 +269,7 @@ fun NewProjectDialog(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Título de la producción") },
-                    placeholder = { Text("Ej. Crónicas de Marea Negra", color = MutedStone) },
+                    placeholder = { Text("Ej. Crónicas de Marea Negra", color = colors.onSurfaceVariant) },
                     singleLine = true,
                     colors = dialogFieldColors(),
                     modifier = Modifier
@@ -285,7 +277,7 @@ fun NewProjectDialog(
                         .testTag("new_project_title_input")
                 )
 
-                Text("Estilo cinematográfico base", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text("Estilo cinematográfico base", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -300,7 +292,7 @@ fun NewProjectDialog(
                     }
                 }
 
-                Text("Material fuente principal", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text("Material fuente principal", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SourceMaterialType.entries.forEach { st ->
                         FilterChip(
@@ -353,7 +345,7 @@ fun NewProjectDialog(
                     }
                 },
                 enabled = title.trim().isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                 modifier = Modifier.testTag("confirm_create_project_button")
             ) {
                 Text("Crear producción", fontWeight = FontWeight.Bold)
@@ -361,7 +353,7 @@ fun NewProjectDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel), color = MutedStone)
+                Text(stringResource(R.string.action_cancel), color = colors.onSurfaceVariant)
             }
         }
     )
@@ -374,19 +366,20 @@ fun ProductionFolderDetailDialog(
     onSaveNotes: (String) -> Unit,
     onOpenWorkspaceTab: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var notesDraft by remember(folder.id, folder.notes) { mutableStateOf(folder.notes) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.Folder, contentDescription = null, tint = AmberGold)
+                Icon(Icons.Rounded.Folder, contentDescription = null, tint = colors.primary)
                 Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
@@ -397,12 +390,12 @@ fun ProductionFolderDetailDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(folder.description, style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                Text(folder.description, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 OutlinedTextField(
                     value = notesDraft,
                     onValueChange = { notesDraft = it },
                     label = { Text("Notas y entregables de la carpeta") },
-                    placeholder = { Text("Añade pendientes, archivos de referencia o checklist…", color = MutedStone) },
+                    placeholder = { Text("Añade pendientes, archivos de referencia o checklist…", color = colors.onSurfaceVariant) },
                     minLines = 3,
                     maxLines = 6,
                     colors = dialogFieldColors(),
@@ -419,9 +412,9 @@ fun ProductionFolderDetailDialog(
                         .fillMaxWidth()
                         .testTag("open_folder_tab_button")
                 ) {
-                    Text("Abrir sección vinculada", color = TealAtmos)
+                    Text("Abrir sección vinculada", color = colors.secondary)
                     Spacer(Modifier.size(6.dp))
-                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(16.dp))
+                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(16.dp))
                 }
             }
         },
@@ -431,7 +424,7 @@ fun ProductionFolderDetailDialog(
                     onSaveNotes(notesDraft)
                     onDismiss()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                 modifier = Modifier.testTag("save_folder_notes_button")
             ) {
                 Text("Guardar notas", fontWeight = FontWeight.Bold)
@@ -439,7 +432,7 @@ fun ProductionFolderDetailDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close), color = MutedStone)
+                Text(stringResource(R.string.action_close), color = colors.onSurfaceVariant)
             }
         }
     )
@@ -450,6 +443,7 @@ fun AddProductionFolderDialog(
     onDismiss: () -> Unit,
     onAddFolder: (name: String, category: String, description: String) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var folderName by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("script") }
     var description by remember { mutableStateOf("") }
@@ -466,15 +460,15 @@ fun AddProductionFolderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = AmberGold)
+                Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = colors.primary)
                 Text("Nueva carpeta de producción")
             }
         },
@@ -489,14 +483,14 @@ fun AddProductionFolderDialog(
                     value = folderName,
                     onValueChange = { folderName = it },
                     label = { Text("Nombre de la carpeta") },
-                    placeholder = { Text("Ej. Casting_y_Vestuario", color = MutedStone) },
+                    placeholder = { Text("Ej. Casting_y_Vestuario", color = colors.onSurfaceVariant) },
                     singleLine = true,
                     colors = dialogFieldColors(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("new_folder_name_input")
                 )
-                Text("Área vinculada", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                Text("Área vinculada", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -529,7 +523,7 @@ fun AddProductionFolderDialog(
                     }
                 },
                 enabled = folderName.trim().isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                 modifier = Modifier.testTag("add_custom_folder_button")
             ) {
                 Text("Crear carpeta", fontWeight = FontWeight.Bold)
@@ -537,7 +531,7 @@ fun AddProductionFolderDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel), color = MutedStone)
+                Text(stringResource(R.string.action_cancel), color = colors.onSurfaceVariant)
             }
         }
     )
@@ -551,6 +545,7 @@ fun LearningMemoryDialog(
     onAddLesson: (LearningCategory, String, Int, String) -> Unit,
     onDeleteLesson: (String) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var selectedCategory by remember { mutableStateOf(LearningCategory.CAMERA) }
     var insightText by remember { mutableStateOf("") }
     var rating by remember { mutableIntStateOf(5) }
@@ -558,9 +553,9 @@ fun LearningMemoryDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = { Text("Autoaprendizaje del Estudio (${lessons.size})") },
         text = {
             Column(
@@ -570,7 +565,7 @@ fun LearningMemoryDialog(
                 Text(
                     text = "Las reglas guardadas se inyectan automáticamente en Gemini y en el Agente Tripartito para futuras producciones.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MutedStone
+                    color = colors.onSurfaceVariant
                 )
 
                 Row(
@@ -605,13 +600,13 @@ fun LearningMemoryDialog(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Prioridad:", style = MaterialTheme.typography.labelSmall, color = MutedStone)
+                    Text("Prioridad:", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
                     (1..5).forEach { star ->
                         IconButton(onClick = { rating = star }, modifier = Modifier.size(34.dp)) {
                             Icon(
                                 imageVector = if (star <= rating) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                                 contentDescription = "$star estrellas",
-                                tint = if (star <= rating) AmberGold else MutedStone,
+                                tint = if (star <= rating) colors.primary else colors.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -619,7 +614,7 @@ fun LearningMemoryDialog(
                 }
 
                 if (validationError != null) {
-                    Text(validationError!!, style = MaterialTheme.typography.labelSmall, color = ErrorCrimson)
+                    Text(validationError!!, style = MaterialTheme.typography.labelSmall, color = colors.error)
                 }
 
                 Button(
@@ -638,7 +633,7 @@ fun LearningMemoryDialog(
                             insightText = ""
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("add_learning_lesson_button")
@@ -654,11 +649,11 @@ fun LearningMemoryDialog(
                 ) {
                     items(lessons, key = { it.id }) { lesson ->
                         Surface(
-                            color = StudioDeepPanel,
+                            color = colors.surfaceVariant,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                                .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                         ) {
                             Row(
                                 modifier = Modifier.padding(10.dp),
@@ -669,10 +664,10 @@ fun LearningMemoryDialog(
                                     Text(
                                         text = "${LearningEngine.CATEGORY_LABELS[lesson.category] ?: lesson.category.wireValue} · ${lesson.rating}★",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = AmberGold
+                                        color = colors.primary
                                     )
-                                    Text(lesson.insight, style = MaterialTheme.typography.bodySmall, color = IvoryPrimary)
-                                    Text(lesson.sourceProjectTitle, style = MaterialTheme.typography.labelSmall, color = MutedStone)
+                                    Text(lesson.insight, style = MaterialTheme.typography.bodySmall, color = colors.onSurface)
+                                    Text(lesson.sourceProjectTitle, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
                                 }
                                 IconButton(
                                     onClick = { onDeleteLesson(lesson.id) },
@@ -681,7 +676,7 @@ fun LearningMemoryDialog(
                                     Icon(
                                         imageVector = Icons.Rounded.DeleteOutline,
                                         contentDescription = "Eliminar aprendizaje",
-                                        tint = MutedStone
+                                        tint = colors.onSurfaceVariant
                                     )
                                 }
                             }
@@ -692,7 +687,7 @@ fun LearningMemoryDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close), color = IvoryPrimary)
+                Text(stringResource(R.string.action_close), color = colors.onSurface)
             }
         }
     )
@@ -702,6 +697,7 @@ fun LearningMemoryDialog(
 fun AgentBlueprintDialog(
     onDismiss: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
 
@@ -724,9 +720,9 @@ fun AgentBlueprintDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = { Text("Plantilla Agent Studio (JSON)") },
         text = {
             Column(
@@ -738,24 +734,24 @@ fun AgentBlueprintDialog(
                 Text(
                     text = "Especificación declarativa del Agente Tripartito y sus 5 herramientas de modificación de expediente.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MutedStone
+                    color = colors.onSurfaceVariant
                 )
                 Surface(
-                    color = StudioDeepPanel,
+                    color = colors.surfaceVariant,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                        .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                 ) {
                     Text(
                         text = blueprintJson,
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = WarmSilver,
+                        color = colors.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
                 if (copied) {
-                    Text("Plantilla JSON copiada al portapapeles.", style = MaterialTheme.typography.labelSmall, color = TealAtmos)
+                    Text("Plantilla JSON copiada al portapapeles.", style = MaterialTheme.typography.labelSmall, color = colors.secondary)
                 }
             }
         },
@@ -767,32 +763,57 @@ fun AgentBlueprintDialog(
                 },
                 modifier = Modifier.testTag("copy_blueprint_json_button")
             ) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
+                Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Copiar JSON", color = AmberGold)
+                Text("Copiar JSON", color = colors.primary)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close), color = IvoryPrimary)
+                Text(stringResource(R.string.action_close), color = colors.onSurface)
             }
         }
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AccountDialog(
     user: FirebaseUser?,
     preferredStyle: String = "",
     onSavePreferredStyle: (String) -> Unit = {},
+    studioConfig: UserStudioConfig = UserStudioConfig(),
+    isDarkMode: Boolean = studioConfig.isDarkMode,
+    onToggleDarkMode: () -> Unit = {},
+    onSaveStudioConfig: (UserStudioConfig) -> Unit = {},
     authStatusMessage: String? = null,
     onClearAuthStatus: () -> Unit = {},
     onOptionalGoogleSignIn: () -> Unit = {},
     onDismiss: () -> Unit,
     onSignOut: () -> Unit
 ) {
-    var styleDraft by remember(preferredStyle) {
-        mutableStateOf(preferredStyle.ifBlank { StudioLogic.DIRECTOR_STYLES.first().label })
+    val colors = MaterialTheme.colorScheme
+    var styleDraft by remember(preferredStyle, studioConfig.preferredStyle) {
+        mutableStateOf(
+            studioConfig.preferredStyle.ifBlank {
+                preferredStyle.ifBlank { StudioLogic.DIRECTOR_STYLES.first().label }
+            }
+        )
+    }
+    var darkDraft by remember(isDarkMode, studioConfig.themeMode) {
+        mutableStateOf(isDarkMode)
+    }
+    var ratioDraft by remember(studioConfig.defaultAspectRatio) {
+        mutableStateOf(studioConfig.defaultAspectRatio.ifBlank { "2.39:1" })
+    }
+    var depthDraft by remember(studioConfig.defaultThinkingDepth) {
+        mutableStateOf(ThinkingDepth.fromWire(studioConfig.defaultThinkingDepth))
+    }
+    var stage3DDraft by remember(studioConfig.stage3DDefault) {
+        mutableStateOf(studioConfig.stage3DDefault)
+    }
+    var autoSaveDraft by remember(studioConfig.autoSaveDrafts) {
+        mutableStateOf(studioConfig.autoSaveDrafts)
     }
 
     AlertDialog(
@@ -800,10 +821,10 @@ fun AccountDialog(
             onClearAuthStatus()
             onDismiss()
         },
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
-        title = { Text(if (user == null) "Acceso con Google requerido" else "Perfil del Director (Google)") },
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
+        title = { Text(if (user == null) "Configuración y Acceso" else "Perfil y Configuración") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -811,27 +832,27 @@ fun AccountDialog(
             ) {
                 if (user == null) {
                     Text(
-                        text = "Conecta tu cuenta de Google para mantener tu perfil, proyectos y secuencias aislados de forma privada en Cloud Firestore.",
+                        text = "Conecta tu cuenta de Google para sincronizar tu perfil, proyectos, hitos y configuraciones en Cloud Firestore.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = WarmSilver
+                        color = colors.onSurfaceVariant
                     )
                 } else {
                     Text(
                         text = user.displayName ?: "Director LumenReel",
                         style = MaterialTheme.typography.titleMedium,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                     Text(
                         text = user.email ?: "",
                         style = MaterialTheme.typography.bodySmall,
-                        color = WarmSilver
+                        color = colors.onSurfaceVariant
                     )
                     Surface(
-                        color = StudioDeepPanel,
+                        color = colors.surfaceVariant,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, colors.outline, RoundedCornerShape(8.dp))
                     ) {
                         Column(
                             modifier = Modifier.padding(10.dp),
@@ -840,54 +861,185 @@ fun AccountDialog(
                             Text(
                                 text = "Perfil independiente en Cloud Firestore",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = TealAtmos,
+                                color = colors.secondary,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = "UID privado: ${user.uid}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MutedStone
+                                color = colors.onSurfaceVariant
                             )
                         }
-                    }
-
-                    Text(
-                        text = "Estilo cinematográfico predeterminado",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = WarmSilver
-                    )
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        StudioLogic.DIRECTOR_STYLES.forEach { preset ->
-                            FilterChip(
-                                selected = styleDraft == preset.label,
-                                onClick = { styleDraft = preset.label },
-                                label = { Text(preset.label, style = MaterialTheme.typography.labelSmall) },
-                                colors = dialogChipColors()
-                            )
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = { onSavePreferredStyle(styleDraft) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("save_profile_style_button")
-                    ) {
-                        Text("Guardar estilo en perfil", color = AmberGold)
                     }
                 }
+
+                // Global Theme & Studio Configuration
+                Surface(
+                    color = colors.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (darkDraft) "Tema Oscuro (Obsidiana)" else "Tema Claro (Papel Guion)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colors.onSurface
+                                )
+                                Text(
+                                    text = "Se aplica y persiste en toda la aplicación",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = darkDraft,
+                                onCheckedChange = { checked ->
+                                    darkDraft = checked
+                                    if (checked != isDarkMode) {
+                                        onToggleDarkMode()
+                                    }
+                                },
+                                modifier = Modifier.testTag("account_theme_switch")
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Escenario 3D por defecto", style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
+                                Text("Vista isométrica al abrir Planos y Sonido", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = stage3DDraft,
+                                onCheckedChange = { stage3DDraft = it },
+                                modifier = Modifier.testTag("account_stage3d_switch")
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Auto-guardar borradores", style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
+                                Text("Restaura guion, ingesta y chat tras reiniciar", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = autoSaveDraft,
+                                onCheckedChange = { autoSaveDraft = it },
+                                modifier = Modifier.testTag("account_autosave_switch")
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Estilo cinematográfico predeterminado",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    StudioLogic.DIRECTOR_STYLES.forEach { preset ->
+                        FilterChip(
+                            selected = styleDraft == preset.label,
+                            onClick = { styleDraft = preset.label },
+                            label = { Text(preset.label, style = MaterialTheme.typography.labelSmall) },
+                            colors = dialogChipColors()
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Relación de aspecto por defecto",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurfaceVariant
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("2.39:1", "1.85:1", "16:9", "1.43:1").forEach { ratio ->
+                        FilterChip(
+                            selected = ratioDraft == ratio,
+                            onClick = { ratioDraft = ratio },
+                            label = { Text(ratio, style = MaterialTheme.typography.labelSmall) },
+                            colors = dialogChipColors(),
+                            modifier = Modifier.testTag("account_ratio_$ratio")
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Profundidad de análisis Gemini",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurfaceVariant
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ThinkingDepth.entries.forEach { depth ->
+                        FilterChip(
+                            selected = depthDraft == depth,
+                            onClick = { depthDraft = depth },
+                            label = { Text(depth.label, style = MaterialTheme.typography.labelSmall) },
+                            colors = dialogChipColors(),
+                            modifier = Modifier.testTag("account_depth_${depth.name}")
+                        )
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val updatedConfig = studioConfig.copy(
+                            themeMode = if (darkDraft) "dark" else "light",
+                            preferredStyle = styleDraft,
+                            defaultAspectRatio = ratioDraft,
+                            defaultThinkingDepth = depthDraft.name,
+                            autoSaveDrafts = autoSaveDraft,
+                            stage3DDefault = stage3DDraft
+                        )
+                        onSaveStudioConfig(updatedConfig)
+                        onSavePreferredStyle(styleDraft)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("save_profile_style_button")
+                ) {
+                    Text("Guardar configuración del estudio", color = colors.primary, fontWeight = FontWeight.SemiBold)
+                }
+
                 if (!authStatusMessage.isNullOrBlank()) {
                     Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
+                        color = colors.errorContainer,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = authStatusMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            color = colors.onErrorContainer,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -898,7 +1050,7 @@ fun AccountDialog(
             if (user == null) {
                 Button(
                     onClick = onOptionalGoogleSignIn,
-                    colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                     modifier = Modifier.testTag("optional_google_sign_in_button")
                 ) {
                     Text("Iniciar sesión con Google", fontWeight = FontWeight.Bold)
@@ -909,7 +1061,7 @@ fun AccountDialog(
                         onDismiss()
                         onSignOut()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorCrimson, contentColor = IvoryPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.error, contentColor = colors.onError),
                     modifier = Modifier.testTag("account_sign_out_button")
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -925,7 +1077,7 @@ fun AccountDialog(
                     onDismiss()
                 }
             ) {
-                Text(stringResource(R.string.action_close), color = IvoryPrimary)
+                Text(stringResource(R.string.action_close), color = colors.onSurface)
             }
         }
     )
@@ -933,18 +1085,18 @@ fun AccountDialog(
 
 @Composable
 private fun dialogFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = AmberGold,
-    unfocusedBorderColor = StudioBorder,
-    focusedTextColor = IvoryPrimary,
-    unfocusedTextColor = IvoryPrimary,
-    focusedLabelColor = AmberGold,
-    unfocusedLabelColor = MutedStone
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
+    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
 )
 
 @Composable
 private fun dialogChipColors() = FilterChipDefaults.filterChipColors(
-    selectedContainerColor = AmberContainer,
-    selectedLabelColor = AmberGold,
-    containerColor = StudioDeepPanel,
-    labelColor = WarmSilver
+    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 )

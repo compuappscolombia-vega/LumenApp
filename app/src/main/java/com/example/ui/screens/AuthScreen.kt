@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,13 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.repository.AuthRepository
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.TealAtmos
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,6 +59,7 @@ fun AuthScreen(
     authRepository: AuthRepository,
     onSignedIn: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isBusy by remember { mutableStateOf(false) }
@@ -77,7 +70,6 @@ fun AuthScreen(
     LaunchedEffect(Unit) {
         if (!attemptedSilent) {
             attemptedSilent = true
-            // Let the first SurfaceSyncGroup frame transaction commit before CredentialManager IPC
             withFrameNanos { }
             delay(180L)
             silentJob = launch {
@@ -94,7 +86,7 @@ fun AuthScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF0E0E14), ObsidianBg, Color(0xFF13110D))
+                    colors = listOf(colors.surfaceVariant.copy(alpha = 0.45f), colors.background, colors.background)
                 )
             )
             .safeDrawingPadding()
@@ -114,7 +106,7 @@ fun AuthScreen(
                     .fillMaxWidth()
                     .height(210.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .border(1.dp, StudioBorder, RoundedCornerShape(18.dp))
+                    .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.cinema_studio_hero),
@@ -129,8 +121,8 @@ fun AuthScreen(
                             Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    ObsidianBg.copy(alpha = 0.72f),
-                                    ObsidianBg.copy(alpha = 0.96f)
+                                    Color(0xFF0B0B0E).copy(alpha = 0.72f),
+                                    Color(0xFF0B0B0E).copy(alpha = 0.96f)
                                 )
                             )
                         )
@@ -149,43 +141,42 @@ fun AuthScreen(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, AmberGold.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFF5A623).copy(alpha = 0.7f), RoundedCornerShape(10.dp))
                     )
                     Column {
                         Text(
                             text = stringResource(R.string.studio_brand_title),
                             style = MaterialTheme.typography.titleLarge,
-                            color = IvoryPrimary
+                            color = Color.White
                         )
                         Text(
                             text = stringResource(R.string.studio_brand_subtitle),
                             style = MaterialTheme.typography.labelMedium,
-                            color = AmberGold
+                            color = Color(0xFFF5A623)
                         )
                     }
                 }
             }
 
-            // Copy & Feature Pill Summary
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = stringResource(R.string.auth_headline),
                     style = MaterialTheme.typography.displaySmall,
-                    color = IvoryPrimary
+                    color = colors.onBackground
                 )
                 Text(
                     text = stringResource(R.string.auth_subhead),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MutedStone
+                    color = colors.onSurfaceVariant
                 )
             }
 
             Surface(
-                color = StudioCard,
+                color = colors.surface,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, StudioBorder, RoundedCornerShape(16.dp))
+                    .border(1.dp, colors.outline, RoundedCornerShape(16.dp))
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),
@@ -198,19 +189,19 @@ fun AuthScreen(
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = null,
-                            tint = AmberGold,
+                            tint = colors.primary,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
                             text = "Acceso privado al estudio",
                             style = MaterialTheme.typography.titleMedium,
-                            color = IvoryPrimary
+                            color = colors.onSurface
                         )
                     }
 
                     if (!authError.isNullOrBlank()) {
                         Surface(
-                            color = MaterialTheme.colorScheme.errorContainer,
+                            color = colors.errorContainer,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -223,12 +214,12 @@ fun AuthScreen(
                                 Text(
                                     text = authError!!,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                    color = colors.onErrorContainer
                                 )
                                 Text(
                                     text = stringResource(R.string.auth_troubleshooting_hint),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                                    color = colors.onErrorContainer.copy(alpha = 0.85f)
                                 )
                             }
                         }
@@ -254,8 +245,8 @@ fun AuthScreen(
                         },
                         enabled = !isBusy,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AmberGold,
-                            contentColor = ObsidianBg
+                            containerColor = colors.primary,
+                            contentColor = colors.onPrimary
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -266,7 +257,7 @@ fun AuthScreen(
                         if (isBusy) {
                             CircularProgressIndicator(
                                 strokeWidth = 2.dp,
-                                color = ObsidianBg,
+                                color = colors.onPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.size(10.dp))
@@ -290,7 +281,7 @@ fun AuthScreen(
                         Icon(
                             imageVector = Icons.Rounded.Shield,
                             contentDescription = null,
-                            tint = TealAtmos,
+                            tint = colors.secondary,
                             modifier = Modifier
                                 .padding(top = 2.dp)
                                 .size(16.dp)
@@ -298,7 +289,7 @@ fun AuthScreen(
                         Text(
                             text = stringResource(R.string.auth_privacy_note),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MutedStone
+                            color = colors.onSurfaceVariant
                         )
                     }
                 }

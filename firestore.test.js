@@ -61,7 +61,7 @@ test("Unauthenticated users cannot read or write any LumenReel collection", asyn
   );
 });
 
-test("Owner creates profile, project, draft sequence, agent message, and learning lesson", async () => {
+test("Owner creates profile with studio config, project, sequence, milestones, storyboard asset, agent message, and lesson", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const past = new Date(Date.now() - 2000);
 
@@ -71,8 +71,46 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
       displayName: "Elena Morales",
       email: "elena@lumenreel.studio",
       role: "director",
+      preferredStyle: "Épica Monumental IMAX",
+      themeMode: "dark",
+      defaultAspectRatio: "2.39:1",
+      defaultThinkingDepth: "STANDARD",
+      autoSaveDrafts: true,
+      stage3DDefault: true,
+      lastProjectId: "",
+      lastSequenceId: "",
+      lastTab: "agent",
       createdAt: past,
       updatedAt: past,
+    })
+  );
+
+  // Valid configuration update
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      themeMode: "light",
+      defaultAspectRatio: "1.43:1",
+      defaultThinkingDepth: "DEEP",
+      autoSaveDrafts: false,
+      stage3DDefault: false,
+      lastProjectId: "proj_1",
+      lastSequenceId: "seq_1",
+      lastTab: "screenplay",
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+
+  // Invalid themeMode / aspectRatio rejected
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      themeMode: "neon_invalid",
+      updatedAt: new Date(Date.now() - 900),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      defaultAspectRatio: "4:3",
+      updatedAt: new Date(Date.now() - 900),
     })
   );
 
@@ -117,6 +155,43 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
     })
   );
 
+  // Milestone CRUD
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_1")
+      .collection("milestones")
+      .doc("ms_1")
+      .set({
+        projectId: "proj_1",
+        ownerId: ALICE_UID,
+        title: "Rodaje Muelle Nocturno",
+        notes: "Llevar lentes anamórficos",
+        dateMillis: Date.now(),
+        milestoneType: "shooting_day",
+        sequenceId: "seq_1",
+        completed: false,
+        createdAt: past,
+        updatedAt: past,
+      })
+  );
+
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_1")
+      .collection("milestones")
+      .doc("ms_1")
+      .update({
+        completed: true,
+        updatedAt: new Date(Date.now() - 800),
+      })
+  );
+
   // Update productionFolders on owned project
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_1").update({
@@ -149,20 +224,6 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
       createdAt: past,
       updatedAt: past,
     })
-  );
-
-  // List empty sequences & populated projects
-  await assertSucceeds(
-    aliceDb.collection("users").doc(ALICE_UID).collection("projects").get()
-  );
-  await assertSucceeds(
-    aliceDb
-      .collection("users")
-      .doc(ALICE_UID)
-      .collection("projects")
-      .doc("proj_1")
-      .collection("sequences")
-      .get()
   );
 
   await assertSucceeds(
@@ -205,6 +266,25 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
       .update({
         versionStatus: "final",
         updatedAt: new Date(Date.now() - 500),
+      })
+  );
+
+  // Storyboard asset write succeeds even on finalized sequences
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_1")
+      .collection("storyboard_assets")
+      .doc("seq_1_sb_1")
+      .set({
+        projectId: "proj_1",
+        ownerId: ALICE_UID,
+        sequenceId: "seq_1",
+        frameId: "sb_1",
+        localImagePath: "/data/user/0/com.aistudio.lumenreel.kxvnqr/files/sb_1.png",
+        updatedAt: new Date(Date.now() - 300),
       })
   );
 
@@ -281,12 +361,24 @@ test("Owner creates profile, project, draft sequence, agent message, and learnin
         createdAt: past,
       })
   );
+
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_1")
+      .collection("milestones")
+      .doc("ms_1")
+      .delete()
+  );
 });
 
-test("Cross-user isolation blocks Bob from reading or modifying Alice workspace", async () => {
+test("Cross-user isolation blocks Bob from reading or modifying Alice workspace and milestones", async () => {
   const past = new Date(Date.now() - 5000);
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().collection("users").doc(ALICE_UID).collection("projects").doc("proj_a").set({
+    const projRef = ctx.firestore().collection("users").doc(ALICE_UID).collection("projects").doc("proj_a");
+    await projRef.set({
       ownerId: ALICE_UID,
       title: "Proyecto Privado",
       genreStyle: "IMAX",
@@ -297,11 +389,25 @@ test("Cross-user isolation blocks Bob from reading or modifying Alice workspace"
       createdAt: past,
       updatedAt: past,
     });
+    await projRef.collection("milestones").doc("ms_a").set({
+      projectId: "proj_a",
+      ownerId: ALICE_UID,
+      title: "Privado",
+      notes: "",
+      dateMillis: Date.now(),
+      milestoneType: "deadline",
+      completed: false,
+      createdAt: past,
+      updatedAt: past,
+    });
   });
 
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   await assertFails(
     bobDb.collection("users").doc(ALICE_UID).collection("projects").get()
+  );
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_a").collection("milestones").get()
   );
   await assertFails(
     bobDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_a").update({

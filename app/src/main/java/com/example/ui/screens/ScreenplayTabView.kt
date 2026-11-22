@@ -63,19 +63,6 @@ import com.example.data.util.LearningEngine
 import com.example.data.util.StudioLogic
 import com.example.ui.components.readClipboardText
 import com.example.ui.components.rememberVoiceDictationController
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.ErrorCrimson
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurfaceElevated
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 
 @Composable
 fun ScreenplayTabView(
@@ -97,6 +84,7 @@ fun ScreenplayTabView(
     onExportFountain: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     val canExportPdf = LearningEngine.canExportPdfForSequence(sequence)
     val isDraft = sequence.versionStatus == SequenceVersionStatus.DRAFT
     var editingSceneIndex by remember(sequence.id) { mutableStateOf<Int?>(null) }
@@ -106,10 +94,10 @@ fun ScreenplayTabView(
     Column(modifier = modifier.fillMaxSize()) {
         // Export & Authoring Action Bar
         Surface(
-            color = StudioCard,
+            color = colors.surface,
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, StudioBorder)
+                .border(1.dp, colors.outline)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -126,9 +114,9 @@ fun ScreenplayTabView(
                             .height(48.dp)
                             .testTag("screenplay_new_sequence_button")
                     ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null, tint = AmberGold, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Rounded.Add, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("Nueva secuencia", color = AmberGold, style = MaterialTheme.typography.labelMedium)
+                        Text("Nueva secuencia", color = colors.primary, style = MaterialTheme.typography.labelMedium)
                     }
                     if (isDraft) {
                         OutlinedButton(
@@ -142,9 +130,9 @@ fun ScreenplayTabView(
                                 .height(48.dp)
                                 .testTag("screenplay_add_scene_button")
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Add, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(4.dp))
-                            Text("Añadir escena", color = TealAtmos, style = MaterialTheme.typography.labelMedium)
+                            Text("Añadir escena", color = colors.secondary, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -164,11 +152,11 @@ fun ScreenplayTabView(
                         Icon(
                             imageVector = Icons.Rounded.Mic,
                             contentDescription = stringResource(R.string.cd_voice_dictate_scene),
-                            tint = AmberGold,
+                            tint = colors.primary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.size(6.dp))
-                        Text("Dictar nueva escena por micrófono", color = AmberGold, style = MaterialTheme.typography.labelMedium)
+                        Text("Dictar nueva escena por micrófono", color = colors.primary, style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
@@ -180,10 +168,10 @@ fun ScreenplayTabView(
                         onClick = onSaveScriptSchedulePdf,
                         enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = TealAtmos,
-                            contentColor = ObsidianBg,
-                            disabledContainerColor = StudioSurfaceElevated,
-                            disabledContentColor = MutedStone
+                            containerColor = colors.secondary,
+                            contentColor = colors.onSecondary,
+                            disabledContainerColor = colors.surfaceVariant,
+                            disabledContentColor = colors.onSurfaceVariant
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -213,10 +201,10 @@ fun ScreenplayTabView(
                         onClick = onExportPdf,
                         enabled = canExportPdf && !isExporting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AmberGold,
-                            contentColor = ObsidianBg,
-                            disabledContainerColor = StudioSurfaceElevated,
-                            disabledContentColor = MutedStone
+                            containerColor = colors.primary,
+                            contentColor = colors.onPrimary,
+                            disabledContainerColor = colors.surfaceVariant,
+                            disabledContentColor = colors.onSurfaceVariant
                         ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
@@ -248,7 +236,7 @@ fun ScreenplayTabView(
                             .height(44.dp)
                             .testTag("export_markdown_button")
                     ) {
-                        Text("Compartir .MD", color = IvoryPrimary, style = MaterialTheme.typography.labelMedium)
+                        Text("Compartir .MD", color = colors.onSurface, style = MaterialTheme.typography.labelMedium)
                     }
                     OutlinedButton(
                         onClick = onExportFountain,
@@ -257,14 +245,14 @@ fun ScreenplayTabView(
                             .height(44.dp)
                             .testTag("export_fountain_button")
                     ) {
-                        Text("Compartir .FOUNTAIN", color = AmberGold, style = MaterialTheme.typography.labelMedium)
+                        Text("Compartir .FOUNTAIN", color = colors.primary, style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 if (!canExportPdf) {
                     Text(
                         text = "Puedes guardar el Guion y Plan de Rodaje en tu dispositivo en cualquier momento. Aprueba la Versión Final para desbloquear la Bitácora Completa PDF.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
             }
@@ -284,7 +272,7 @@ fun ScreenplayTabView(
                         Text(
                             text = "Esta secuencia todavía no contiene escenas de guion.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MutedStone
+                            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                         )
                         if (isDraft) {
                             Button(
@@ -294,8 +282,8 @@ fun ScreenplayTabView(
                                     showSceneEditor = true
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = AmberGold,
-                                    contentColor = ObsidianBg
+                                    containerColor = colors.primary,
+                                    contentColor = colors.onPrimary
                                 ),
                                 modifier = Modifier.testTag("empty_add_scene_button")
                             ) {
@@ -310,11 +298,11 @@ fun ScreenplayTabView(
                     key = { idx, it -> "${idx}_${it.sceneNumber}_${it.slugline}" }
                 ) { idx, scene ->
                     Surface(
-                        color = StudioDeepPanel,
+                        color = colors.surface,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+                            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -328,7 +316,7 @@ fun ScreenplayTabView(
                                 Text(
                                     text = "ESCENA ${scene.sceneNumber} · ${scene.slugline.uppercase()}",
                                     style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
-                                    color = AmberGold,
+                                    color = colors.primary,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -346,7 +334,7 @@ fun ScreenplayTabView(
                                         Icon(
                                             imageVector = Icons.Rounded.Edit,
                                             contentDescription = "Editar escena ${scene.sceneNumber}",
-                                            tint = TealAtmos,
+                                            tint = colors.secondary,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -366,7 +354,7 @@ fun ScreenplayTabView(
                                             Text(
                                                 text = (beat.character ?: "PERSONAJE").uppercase(),
                                                 style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
-                                                color = IvoryPrimary,
+                                                color = colors.onSurface,
                                                 fontWeight = FontWeight.Bold,
                                                 textAlign = TextAlign.Center
                                             )
@@ -377,42 +365,42 @@ fun ScreenplayTabView(
                                                         fontFamily = FontFamily.Monospace,
                                                         fontStyle = FontStyle.Italic
                                                     ),
-                                                    color = MutedStone,
+                                                    color = colors.onSurfaceVariant.copy(alpha = 0.78f),
                                                     textAlign = TextAlign.Center
                                                 )
                                             }
                                             Text(
                                                 text = beat.text,
                                                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                                color = WarmSilver,
+                                                color = colors.onSurfaceVariant,
                                                 textAlign = TextAlign.Center
                                             )
                                         }
                                     }
                                     "camera" -> {
                                         Surface(
-                                            color = AmberContainer,
+                                            color = colors.primaryContainer,
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text(
                                                 text = "[CÁMARA] ${beat.text}",
                                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                                color = AmberGold,
+                                                color = colors.onPrimaryContainer,
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                             )
                                         }
                                     }
                                     "sound" -> {
                                         Surface(
-                                            color = TealContainer,
+                                            color = colors.secondaryContainer,
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text(
                                                 text = "[SONIDO] ${beat.text}",
                                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                                color = TealAtmos,
+                                                color = colors.onSecondaryContainer,
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                             )
                                         }
@@ -421,7 +409,7 @@ fun ScreenplayTabView(
                                         Text(
                                             text = beat.text,
                                             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                                            color = IvoryPrimary
+                                            color = colors.onSurface
                                         )
                                     }
                                 }
@@ -476,6 +464,7 @@ private fun ScreenplaySceneEditorDialog(
     ) -> Unit
 ) {
     val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
     val existingAction = remember(initialScene) {
         initialScene?.beats
             ?.filter { it.type.equals("action", ignoreCase = true) }
@@ -507,9 +496,9 @@ private fun ScreenplaySceneEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = StudioCard,
-        titleContentColor = AmberGold,
-        textContentColor = IvoryPrimary,
+        containerColor = colors.surface,
+        titleContentColor = colors.primary,
+        textContentColor = colors.onSurface,
         title = { Text(if (initialScene == null) "Nueva Escena de Guion" else "Editar Escena ${initialScene.sceneNumber}") },
         text = {
             Column(
@@ -551,7 +540,7 @@ private fun ScreenplaySceneEditorDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Acción visual", style = MaterialTheme.typography.labelMedium, color = WarmSilver)
+                    Text("Acción visual", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -565,13 +554,13 @@ private fun ScreenplaySceneEditorDialog(
                             Icon(
                                 imageVector = if (voiceController.isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
                                 contentDescription = stringResource(R.string.cd_voice_dictate_scene),
-                                tint = if (voiceController.isListening) ErrorCrimson else TealAtmos,
+                                tint = if (voiceController.isListening) colors.error else colors.secondary,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.size(4.dp))
                             Text(
                                 text = if (voiceController.isListening) "Detener" else "Dictar",
-                                color = if (voiceController.isListening) ErrorCrimson else TealAtmos,
+                                color = if (voiceController.isListening) colors.error else colors.secondary,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold
                             )
@@ -583,20 +572,20 @@ private fun ScreenplaySceneEditorDialog(
                             },
                             modifier = Modifier.minimumInteractiveComponentSize()
                         ) {
-                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = AmberGold, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.size(4.dp))
-                            Text("Pegar", color = AmberGold, style = MaterialTheme.typography.labelSmall)
+                            Text("Pegar", color = colors.primary, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
 
                 if (voiceController.isListening) {
                     Surface(
-                        color = TealContainer,
+                        color = colors.secondaryContainer,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, TealAtmos, RoundedCornerShape(8.dp))
+                            .border(1.dp, colors.secondary, RoundedCornerShape(8.dp))
                             .testTag("scene_voice_partial_banner")
                     ) {
                         Row(
@@ -604,7 +593,7 @@ private fun ScreenplaySceneEditorDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = TealAtmos, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(18.dp))
                             Text(
                                 text = if (voiceController.partialTranscript.isNotBlank()) {
                                     "Escuchando: «${voiceController.partialTranscript}»"
@@ -612,7 +601,7 @@ private fun ScreenplaySceneEditorDialog(
                                     "Escuchando tu narración… habla cerca del micrófono."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = IvoryPrimary
+                                color = colors.onSecondaryContainer
                             )
                         }
                     }
@@ -620,7 +609,7 @@ private fun ScreenplaySceneEditorDialog(
 
                 if (!voiceController.errorMessage.isNullOrBlank()) {
                     Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
+                        color = colors.errorContainer,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -629,7 +618,7 @@ private fun ScreenplaySceneEditorDialog(
                         Text(
                             text = voiceController.errorMessage!!,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            color = colors.onErrorContainer,
                             modifier = Modifier.padding(10.dp)
                         )
                     }
@@ -638,7 +627,12 @@ private fun ScreenplaySceneEditorDialog(
                 OutlinedTextField(
                     value = actionText,
                     onValueChange = { actionText = it },
-                    placeholder = { Text("Describe lo que ve y escucha la cámara, o usa el micrófono…", color = MutedStone) },
+                    placeholder = {
+                        Text(
+                            "Describe lo que ve y escucha la cámara, o usa el micrófono…",
+                            color = colors.onSurfaceVariant.copy(alpha = 0.72f)
+                        )
+                    },
                     minLines = 3,
                     maxLines = 6,
                     colors = sceneFieldColors(),
@@ -669,7 +663,7 @@ private fun ScreenplaySceneEditorDialog(
             Button(
                 onClick = { onSave(sceneNumber, slugline, timeOfDay, actionText, dialogueCharacter, dialogueText) },
                 enabled = actionText.isNotBlank() || dialogueText.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = AmberGold, contentColor = ObsidianBg),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
                 modifier = Modifier.testTag("save_scene_dialog_button")
             ) {
                 Text("Guardar escena", fontWeight = FontWeight.Bold)
@@ -677,18 +671,21 @@ private fun ScreenplaySceneEditorDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancelar", color = MutedStone)
+                Text("Cancelar", color = colors.onSurfaceVariant)
             }
         }
     )
 }
 
 @Composable
-private fun sceneFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = AmberGold,
-    unfocusedBorderColor = StudioBorder,
-    focusedTextColor = IvoryPrimary,
-    unfocusedTextColor = IvoryPrimary,
-    focusedLabelColor = AmberGold,
-    unfocusedLabelColor = MutedStone
-)
+private fun sceneFieldColors(): androidx.compose.material3.TextFieldColors {
+    val colors = MaterialTheme.colorScheme
+    return OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = colors.primary,
+        unfocusedBorderColor = colors.outline,
+        focusedTextColor = colors.onSurface,
+        unfocusedTextColor = colors.onSurface,
+        focusedLabelColor = colors.primary,
+        unfocusedLabelColor = colors.onSurfaceVariant.copy(alpha = 0.78f)
+    )
+}

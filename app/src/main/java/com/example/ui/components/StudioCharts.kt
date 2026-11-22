@@ -33,13 +33,6 @@ import com.example.data.model.ProductionSequence
 import com.example.data.model.ShotSpec
 import com.example.data.util.ProductionProgress
 import com.example.data.util.StudioLogic
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioCard
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.TealAtmos
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -51,13 +44,18 @@ fun ProductionRadarChartCard(
     activeSequence: ProductionSequence
 ) {
     val report = ProductionProgress.computeProductionRadarMetrics(project, activeSequence)
+    val colors = MaterialTheme.colorScheme
+    val gridRingColor = colors.onSurface.copy(alpha = 0.12f)
+    val spokeColor = colors.onSurface.copy(alpha = 0.16f)
+    val projectPolyColor = colors.primary
+    val seqPolyColor = colors.secondary
 
     Surface(
-        color = StudioCard,
+        color = colors.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -72,23 +70,23 @@ fun ProductionRadarChartCard(
                     Text(
                         text = "Radar de Progreso de Producción",
                         style = MaterialTheme.typography.titleMedium,
-                        color = AmberGold
+                        color = colors.primary
                     )
                     Text(
                         text = "${report.sequencesCount} secuencias · ${report.finalCount} versión final",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
                 Surface(
-                    color = StudioDeepPanel,
+                    color = colors.surfaceVariant,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.border(1.dp, StudioBorder, RoundedCornerShape(8.dp))
+                    modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(8.dp))
                 ) {
                     Text(
                         text = "${report.overallProjectScore}% Global",
                         style = MaterialTheme.typography.labelMedium,
-                        color = IvoryPrimary,
+                        color = colors.onSurface,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
@@ -126,7 +124,7 @@ fun ProductionRadarChartCard(
                         ringPath.close()
                         drawPath(
                             path = ringPath,
-                            color = Color.White.copy(alpha = 0.10f),
+                            color = gridRingColor,
                             style = Stroke(width = 1.dp.toPx())
                         )
                     }
@@ -135,14 +133,14 @@ fun ProductionRadarChartCard(
                     for (i in 0 until axesCount) {
                         val angle = (-PI / 2.0 + i * (2.0 * PI / axesCount)).toFloat()
                         drawLine(
-                            color = Color.White.copy(alpha = 0.14f),
+                            color = spokeColor,
                             start = Offset(cx, cy),
                             end = Offset(cx + cos(angle) * radius, cy + sin(angle) * radius),
                             strokeWidth = 1.dp.toPx()
                         )
                     }
 
-                    // Project Average Polygon (Amber Gold)
+                    // Project Average Polygon (Primary)
                     val projectPath = Path()
                     report.axes.forEachIndexed { i, axis ->
                         val angle = (-PI / 2.0 + i * (2.0 * PI / axesCount)).toFloat()
@@ -152,10 +150,10 @@ fun ProductionRadarChartCard(
                         if (i == 0) projectPath.moveTo(px, py) else projectPath.lineTo(px, py)
                     }
                     projectPath.close()
-                    drawPath(projectPath, color = AmberGold.copy(alpha = 0.22f))
-                    drawPath(projectPath, color = AmberGold, style = Stroke(width = 2.dp.toPx()))
+                    drawPath(projectPath, color = projectPolyColor.copy(alpha = 0.22f))
+                    drawPath(projectPath, color = projectPolyColor, style = Stroke(width = 2.dp.toPx()))
 
-                    // Active Sequence Polygon (Teal Atmos)
+                    // Active Sequence Polygon (Secondary)
                     val seqPath = Path()
                     report.axes.forEachIndexed { i, axis ->
                         val angle = (-PI / 2.0 + i * (2.0 * PI / axesCount)).toFloat()
@@ -165,8 +163,8 @@ fun ProductionRadarChartCard(
                         if (i == 0) seqPath.moveTo(px, py) else seqPath.lineTo(px, py)
                     }
                     seqPath.close()
-                    drawPath(seqPath, color = TealAtmos.copy(alpha = 0.18f))
-                    drawPath(seqPath, color = TealAtmos, style = Stroke(width = 2.dp.toPx()))
+                    drawPath(seqPath, color = seqPolyColor.copy(alpha = 0.18f))
+                    drawPath(seqPath, color = seqPolyColor, style = Stroke(width = 2.dp.toPx()))
                 }
 
                 // Axis Labels Positioned Cleanly at Corners
@@ -178,7 +176,7 @@ fun ProductionRadarChartCard(
                     Text(
                         text = "Guion ${report.axes.getOrNull(0)?.sequenceScore ?: 0}%",
                         style = MaterialTheme.typography.labelSmall,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -187,18 +185,18 @@ fun ProductionRadarChartCard(
                         Text(
                             text = "Sonido\n${report.axes.getOrNull(3)?.sequenceScore ?: 0}%",
                             style = MaterialTheme.typography.labelSmall,
-                            color = IvoryPrimary
+                            color = colors.onSurface
                         )
                         Text(
                             text = "Iluminación\n${report.axes.getOrNull(1)?.sequenceScore ?: 0}%",
                             style = MaterialTheme.typography.labelSmall,
-                            color = IvoryPrimary
+                            color = colors.onSurface
                         )
                     }
                     Text(
                         text = "VFX ${report.axes.getOrNull(2)?.sequenceScore ?: 0}%",
                         style = MaterialTheme.typography.labelSmall,
-                        color = IvoryPrimary
+                        color = colors.onSurface
                     )
                 }
             }
@@ -209,15 +207,15 @@ fun ProductionRadarChartCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(modifier = Modifier.height(8.dp).fillMaxWidth(0.05f).clip(RoundedCornerShape(4.dp)).background(AmberGold))
-                    Text("Proyecto", style = MaterialTheme.typography.labelSmall, color = AmberGold)
+                    Box(modifier = Modifier.height(8.dp).fillMaxWidth(0.05f).clip(RoundedCornerShape(4.dp)).background(colors.primary))
+                    Text("Proyecto", style = MaterialTheme.typography.labelSmall, color = colors.primary)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(modifier = Modifier.height(8.dp).fillMaxWidth(0.05f).clip(RoundedCornerShape(4.dp)).background(TealAtmos))
-                    Text("Secuencia activa", style = MaterialTheme.typography.labelSmall, color = TealAtmos)
+                    Box(modifier = Modifier.height(8.dp).fillMaxWidth(0.05f).clip(RoundedCornerShape(4.dp)).background(colors.secondary))
+                    Text("Secuencia activa", style = MaterialTheme.typography.labelSmall, color = colors.secondary)
                 }
             }
 
@@ -228,20 +226,24 @@ fun ProductionRadarChartCard(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(axis.axis, style = MaterialTheme.typography.labelLarge, color = IvoryPrimary)
+                            Text(axis.axis, style = MaterialTheme.typography.labelLarge, color = colors.onSurface)
                             Text(
                                 text = "${axis.sequenceScore}% sec · ${axis.projectScore}% proy",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MutedStone
+                                color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                             )
                         }
                         LinearProgressIndicator(
                             progress = { (axis.sequenceScore / 100f).coerceIn(0f, 1f) },
-                            color = AmberGold,
-                            trackColor = Color.White.copy(alpha = 0.08f),
+                            color = colors.primary,
+                            trackColor = colors.onSurface.copy(alpha = 0.10f),
                             modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(4.dp))
                         )
-                        Text(axis.detailSummary, style = MaterialTheme.typography.bodySmall, color = MutedStone)
+                        Text(
+                            axis.detailSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
+                        )
                     }
                 }
             }
@@ -255,13 +257,15 @@ fun OpticalViewfinderCanvas(
     activeShot: ShotSpec?
 ) {
     val ratioValue = StudioLogic.parseAspectRatio(aspectRatioStr)
+    val colors = MaterialTheme.colorScheme
+    val reticlesColor = colors.primary
 
     Surface(
         color = Color(0xFF07070A),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, StudioBorder, RoundedCornerShape(12.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(12.dp))
     ) {
         Box(
             modifier = Modifier
@@ -293,7 +297,7 @@ fun OpticalViewfinderCanvas(
                     size = Size(frameW, frameH)
                 )
                 drawRect(
-                    color = AmberGold.copy(alpha = 0.85f),
+                    color = reticlesColor.copy(alpha = 0.85f),
                     topLeft = Offset(fx, fy),
                     size = Size(frameW, frameH),
                     style = Stroke(width = 1.4.dp.toPx())
@@ -313,22 +317,22 @@ fun OpticalViewfinderCanvas(
                 val cx = size.width / 2f
                 val cy = size.height / 2f
                 val arm = 10.dp.toPx()
-                drawLine(AmberGold.copy(alpha = 0.65f), Offset(cx - arm, cy), Offset(cx + arm, cy), strokeWidth = 1.dp.toPx())
-                drawLine(AmberGold.copy(alpha = 0.65f), Offset(cx, cy - arm), Offset(cx, cy + arm), strokeWidth = 1.dp.toPx())
+                drawLine(reticlesColor.copy(alpha = 0.65f), Offset(cx - arm, cy), Offset(cx + arm, cy), strokeWidth = 1.dp.toPx())
+                drawLine(reticlesColor.copy(alpha = 0.65f), Offset(cx, cy - arm), Offset(cx, cy + arm), strokeWidth = 1.dp.toPx())
             }
 
             if (activeShot != null) {
                 Text(
                     text = "${activeShot.shotType} · ${activeShot.lensMm}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = AmberGold,
+                    color = Color(0xFFE5A93C),
                     modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
                 )
             }
             Text(
                 text = aspectRatioStr,
                 style = MaterialTheme.typography.labelSmall,
-                color = MutedStone,
+                color = Color(0xFF9A968E),
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
             )
         }

@@ -7,12 +7,14 @@ import com.example.data.model.AgentMessageDoc
 import com.example.data.model.AgentRoleFocus
 import com.example.data.model.AgentToolAction
 import com.example.data.model.AudioAnalysisReport
+import com.example.data.model.CalendarMilestoneType
 import com.example.data.model.ColorSwatch
 import com.example.data.model.LearningCategory
 import com.example.data.model.LearningLesson
 import com.example.data.model.LearningLessonDoc
 import com.example.data.model.LightingSetup
 import com.example.data.model.ProductionFolder
+import com.example.data.model.ProductionMilestoneItem
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
@@ -22,6 +24,8 @@ import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.StudioProjectDoc
+import com.example.data.model.ThinkingDepth
+import com.example.data.model.UserStudioConfig
 import com.example.data.model.VfxBreakdown
 import com.example.data.util.LearningEngine
 import com.example.data.util.OperationType
@@ -54,7 +58,8 @@ data class UserProfileState(
     val uid: String = "",
     val displayName: String = "",
     val email: String = "",
-    val preferredStyle: String = ""
+    val preferredStyle: String = "",
+    val config: UserStudioConfig = UserStudioConfig()
 )
 
 class StudioRepository(
@@ -119,6 +124,21 @@ class StudioRepository(
         val shortUuid = UUID.randomUUID().toString().replace("-", "").take(12)
         return "${prefix}_${shortUuid}"
     }
+
+    fun observeGlobalThemeDark(): Flow<Boolean> =
+        localStore?.observeGlobalThemeDark() ?: flowOf(true)
+
+    fun getCachedThemeDark(): Boolean =
+        localStore?.getCachedThemeDark() ?: true
+
+    fun getCachedUserConfig(userId: String): UserStudioConfig =
+        localStore?.getUserConfigSnapshot(userId) ?: UserStudioConfig()
+
+    fun loadWorkspaceDrafts(userId: String): LocalWorkspaceDraftSnapshot =
+        localStore?.getWorkspaceDraftSnapshot(userId) ?: LocalWorkspaceDraftSnapshot()
+
+    suspend fun saveWorkspaceDrafts(userId: String, draft: LocalWorkspaceDraftSnapshot): Result<Unit> =
+        localStore?.saveWorkspaceDraftSnapshot(userId, draft) ?: Result.success(Unit)
 
     fun observeProjects(userId: String): Flow<List<ProductionProject>> {
         if (isLocalMode(userId)) {
@@ -225,6 +245,43 @@ class StudioRepository(
         }
     }
 
+    fun observeMilestones(userId: String, projectId: String): Flow<List<ProductionMilestoneItem>> {
+        if (projectId.isBlank()) return flowOf(emptyList())
+        if (isLocalMode(userId)) {
+            return localStore!!.observeMilestones(projectId)
+        }
+        return db.collection("users").document(userId)
+            .collection("projects").document(projectId)
+            .collection("milestones")
+            .snapshots(MetadataChanges.INCLUDE)
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { doc -> parseMilestoneDocument(doc) }
+                    .sortedBy { it.dateMillis }
+            }
+    }
+
+    fun observeStoryboardAssetPaths(userId: String, projectId: String): Flow<Map<String, String>> {
+        if (projectId.isBlank()) return flowOf(emptyMap())
+        if (isLocalMode(userId)) {
+            return localStore!!.observeStoryboardAssets(projectId)
+        }
+        val remoteFlow = db.collection("users").document(userId)
+            .collection("projects").document(projectId)
+            .collection("storyboard_assets")
+            .snapshots(MetadataChanges.INCLUDE)
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { doc ->
+                    val frameId = doc.getString("frameId") ?: return@mapNotNull null
+                    val path = doc.getString("localImagePath") ?: return@mapNotNull null
+                    if (frameId.isNotBlank() && path.isNotBlank()) frameId to path else null
+                }.toMap()
+            }
+        val localFlow = localStore?.observeStoryboardAssets(projectId) ?: flowOf(emptyMap())
+        return combine(localFlow, remoteFlow) { localMap, remoteMap ->
+            remoteMap + localMap
+        }
+    }
+
     fun observeAgentMessages(userId: String, projectId: String): Flow<List<AgentMessage>> {
         if (isLocalMode(userId)) {
             return localStore!!.observeAgentMessages(projectId)
@@ -276,6 +333,25 @@ class StudioRepository(
             }
     }
 
+    private fun parseMilestoneDocument(doc: DocumentSnapshot): ProductionMilestoneItem? {
+        if (!doc.exists()) return null
+        val createdTs = doc.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        val updatedTs = doc.getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        return ProductionMilestoneItem(
+            id = doc.id,
+            projectId = doc.getString("projectId") ?: "",
+            ownerId = doc.getString("ownerId") ?: "",
+            title = doc.getString("title") ?: "",
+            notes = doc.getString("notes") ?: "",
+            dateMillis = doc.getLong("dateMillis") ?: 0L,
+            milestoneType = doc.getString("milestoneType") ?: CalendarMilestoneType.SHOOTING_DAY.wireValue,
+            sequenceId = doc.getString("sequenceId"),
+            completed = doc.getBoolean("completed") ?: false,
+            createdAtMillis = (createdTs ?: Timestamp.now()).toDate().time,
+            updatedAtMillis = (updatedTs ?: createdTs ?: Timestamp.now()).toDate().time
+        )
+    }
+
     private fun parseSequenceDocument(doc: DocumentSnapshot): ProductionSequence? {
         val data = doc.data ?: return null
         val seqMap = data["sequenceData"] as? Map<*, *> ?: emptyMap<String, Any>()
@@ -319,6 +395,22 @@ class StudioRepository(
         )
     }
 
+    private fun normalizeConfig(raw: UserStudioConfig): UserStudioConfig {
+        val safeTheme = if (raw.themeMode.equals("light", ignoreCase = true)) "light" else "dark"
+        val allowedRatios = setOf("2.39:1", "1.85:1", "16:9", "1.43:1")
+        val safeRatio = raw.defaultAspectRatio.trim().takeIf { it in allowedRatios } ?: "2.39:1"
+        val safeDepth = ThinkingDepth.fromWire(raw.defaultThinkingDepth).name
+        return raw.copy(
+            themeMode = safeTheme,
+            preferredStyle = raw.preferredStyle.trim().take(160),
+            defaultAspectRatio = safeRatio,
+            defaultThinkingDepth = safeDepth,
+            lastProjectId = raw.lastProjectId.take(128),
+            lastSequenceId = raw.lastSequenceId.take(128),
+            lastTab = raw.lastTab.take(40)
+        )
+    }
+
     suspend fun ensureUserProfile(
         userId: String,
         displayName: String,
@@ -329,6 +421,7 @@ class StudioRepository(
             requireUserId(userId)
             val safeName = displayName.trim().ifBlank { "Director LumenReel" }.take(120)
             val safeEmail = email.trim().ifBlank { "${userId}@lumenreel.local" }.take(200)
+            val initialConfig = normalizeConfig(localStore?.getUserConfigSnapshot(userId) ?: UserStudioConfig())
             val docRef = db.document(path)
             val existing = docRef.get().await()
             if (!existing.exists()) {
@@ -337,6 +430,15 @@ class StudioRepository(
                     "displayName" to safeName,
                     "email" to safeEmail,
                     "role" to "director",
+                    "preferredStyle" to initialConfig.preferredStyle,
+                    "themeMode" to initialConfig.themeMode,
+                    "defaultAspectRatio" to initialConfig.defaultAspectRatio,
+                    "defaultThinkingDepth" to initialConfig.defaultThinkingDepth,
+                    "autoSaveDrafts" to initialConfig.autoSaveDrafts,
+                    "stage3DDefault" to initialConfig.stage3DDefault,
+                    "lastProjectId" to initialConfig.lastProjectId,
+                    "lastSequenceId" to initialConfig.lastSequenceId,
+                    "lastTab" to initialConfig.lastTab,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -348,6 +450,8 @@ class StudioRepository(
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
+                val remoteConfig = parseUserStudioConfig(existing, initialConfig)
+                localStore?.saveUserConfig(userId, remoteConfig)
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -358,41 +462,110 @@ class StudioRepository(
         }
     }
 
+    private fun parseUserStudioConfig(
+        doc: DocumentSnapshot,
+        fallback: UserStudioConfig = UserStudioConfig()
+    ): UserStudioConfig = normalizeConfig(
+        UserStudioConfig(
+            themeMode = doc.getString("themeMode") ?: fallback.themeMode,
+            preferredStyle = doc.getString("preferredStyle") ?: fallback.preferredStyle,
+            defaultAspectRatio = doc.getString("defaultAspectRatio") ?: fallback.defaultAspectRatio,
+            defaultThinkingDepth = doc.getString("defaultThinkingDepth") ?: fallback.defaultThinkingDepth,
+            autoSaveDrafts = doc.getBoolean("autoSaveDrafts") ?: fallback.autoSaveDrafts,
+            stage3DDefault = doc.getBoolean("stage3DDefault") ?: fallback.stage3DDefault,
+            lastProjectId = doc.getString("lastProjectId") ?: fallback.lastProjectId,
+            lastSequenceId = doc.getString("lastSequenceId") ?: fallback.lastSequenceId,
+            lastTab = doc.getString("lastTab") ?: fallback.lastTab
+        )
+    )
+
     fun observeUserProfile(userId: String): Flow<UserProfileState?> {
         if (isLocalMode(userId)) {
-            return flowOf(
+            return localStore!!.observeUserConfig(userId).map { cfg ->
                 UserProfileState(
                     uid = userId,
                     displayName = "Director Local",
                     email = "",
-                    preferredStyle = ""
+                    preferredStyle = cfg.preferredStyle,
+                    config = cfg
                 )
-            )
+            }
         }
         return db.collection("users").document(userId)
             .snapshots(MetadataChanges.INCLUDE)
             .map { doc ->
                 if (!doc.exists()) null
-                else UserProfileState(
-                    uid = doc.getString("uid") ?: userId,
-                    displayName = doc.getString("displayName") ?: "",
-                    email = doc.getString("email") ?: "",
-                    preferredStyle = doc.getString("preferredStyle") ?: ""
-                )
+                else {
+                    val cfg = parseUserStudioConfig(doc, getCachedUserConfig(userId))
+                    UserProfileState(
+                        uid = doc.getString("uid") ?: userId,
+                        displayName = doc.getString("displayName") ?: "",
+                        email = doc.getString("email") ?: "",
+                        preferredStyle = cfg.preferredStyle,
+                        config = cfg
+                    )
+                }
             }
     }
 
-    suspend fun updateUserPreferredStyle(
+    suspend fun updateUserStudioConfig(
         userId: String,
-        preferredStyle: String
+        config: UserStudioConfig
     ): Result<Unit> {
+        val normalized = normalizeConfig(config)
+        localStore?.saveUserConfig(userId, normalized)
         if (isLocalMode(userId)) {
             return Result.success(Unit)
         }
         val path = "users/$userId"
         return try {
             val uid = requireUserId(userId)
-            val safeStyle = preferredStyle.trim().take(160)
+            val docRef = db.document("users/$uid")
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                val user = auth.currentUser
+                ensureUserProfile(
+                    userId = uid,
+                    displayName = user?.displayName ?: "Director LumenReel",
+                    email = user?.email ?: "${uid}@lumenreel.local"
+                ).getOrThrow()
+            }
+            docRef.update(
+                mapOf(
+                    "themeMode" to normalized.themeMode,
+                    "preferredStyle" to normalized.preferredStyle,
+                    "defaultAspectRatio" to normalized.defaultAspectRatio,
+                    "defaultThinkingDepth" to normalized.defaultThinkingDepth,
+                    "autoSaveDrafts" to normalized.autoSaveDrafts,
+                    "stage3DDefault" to normalized.stage3DDefault,
+                    "lastProjectId" to normalized.lastProjectId,
+                    "lastSequenceId" to normalized.lastSequenceId,
+                    "lastTab" to normalized.lastTab,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateUserPreferredStyle(
+        userId: String,
+        preferredStyle: String
+    ): Result<Unit> {
+        val current = getCachedUserConfig(userId)
+        val safeStyle = preferredStyle.trim().take(160)
+        localStore?.saveUserConfig(userId, current.copy(preferredStyle = safeStyle))
+        if (isLocalMode(userId)) {
+            return Result.success(Unit)
+        }
+        val path = "users/$userId"
+        return try {
+            val uid = requireUserId(userId)
             val docRef = db.document("users/$uid")
             val snap = docRef.get().await()
             if (!snap.exists()) {
@@ -414,6 +587,122 @@ class StudioRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createMilestone(
+        userId: String,
+        projectId: String,
+        title: String,
+        notes: String,
+        dateMillis: Long,
+        type: CalendarMilestoneType,
+        sequenceId: String? = null
+    ): Result<ProductionMilestoneItem> {
+        if (isLocalMode(userId)) {
+            return localStore!!.saveMilestone(
+                userId = userId,
+                projectId = projectId,
+                title = title,
+                notes = notes,
+                dateMillis = dateMillis,
+                milestoneType = type,
+                sequenceId = sequenceId
+            )
+        }
+        val milestoneId = newSafeDocId("ms")
+        val path = "users/$userId/projects/$projectId/milestones/$milestoneId"
+        return try {
+            requireUserId(userId)
+            val cleanTitle = title.trim().take(160)
+            require(cleanTitle.isNotEmpty()) { "El título del hito es obligatorio." }
+            val cleanNotes = notes.trim().take(1000)
+            val safeDate = dateMillis.coerceAtLeast(1L)
+            val cleanSeqId = sequenceId?.trim()?.takeIf { it.isNotEmpty() }?.take(128)
+            val payload = mutableMapOf<String, Any>(
+                "projectId" to projectId,
+                "ownerId" to userId,
+                "title" to cleanTitle,
+                "notes" to cleanNotes,
+                "dateMillis" to safeDate,
+                "milestoneType" to type.wireValue,
+                "completed" to false,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (cleanSeqId != null) {
+                payload["sequenceId"] = cleanSeqId
+            }
+            db.document(path).set(payload).await()
+            val now = System.currentTimeMillis()
+            Result.success(
+                ProductionMilestoneItem(
+                    id = milestoneId,
+                    projectId = projectId,
+                    ownerId = userId,
+                    title = cleanTitle,
+                    notes = cleanNotes,
+                    dateMillis = safeDate,
+                    milestoneType = type.wireValue,
+                    sequenceId = cleanSeqId,
+                    completed = false,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun toggleMilestoneCompleted(
+        userId: String,
+        projectId: String,
+        milestoneId: String,
+        completed: Boolean
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.toggleMilestoneCompleted(milestoneId, completed)
+        }
+        val path = "users/$userId/projects/$projectId/milestones/$milestoneId"
+        return try {
+            requireUserId(userId)
+            db.document(path).update(
+                mapOf(
+                    "completed" to completed,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteMilestone(
+        userId: String,
+        projectId: String,
+        milestoneId: String
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.deleteMilestone(milestoneId)
+        }
+        val path = "users/$userId/projects/$projectId/milestones/$milestoneId"
+        return try {
+            requireUserId(userId)
+            db.document(path).delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
             Result.failure(e)
         }
     }
@@ -544,6 +833,14 @@ class StudioRepository(
             val msgDocs = projRef.collection("agent_messages").get().await()
             for (msgDoc in msgDocs.documents) {
                 msgDoc.reference.delete().await()
+            }
+            val msDocs = projRef.collection("milestones").get().await()
+            for (msDoc in msDocs.documents) {
+                msDoc.reference.delete().await()
+            }
+            val assetDocs = projRef.collection("storyboard_assets").get().await()
+            for (assetDoc in assetDocs.documents) {
+                assetDoc.reference.delete().await()
             }
             projRef.delete().await()
             _firestoreSequenceCache.update { it - cacheKey(userId, projectId) }
@@ -681,20 +978,42 @@ class StudioRepository(
         frameId: String,
         localImagePath: String
     ): Result<Unit> {
+        localStore?.upsertStoryboardAsset(projectId, sequence.id, frameId, localImagePath)
         if (isLocalMode(userId)) {
             return localStore!!.updateStoryboardFramePath(sequence.id, frameId, localImagePath)
         }
-        if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
-            val updatedFrames = sequence.storyboardFrames.map {
-                if (it.id == frameId) it.copy(localImagePath = localImagePath) else it
-            }
-            return updateDraftSequence(
-                userId = userId,
-                projectId = projectId,
-                sequence = sequence.copy(storyboardFrames = updatedFrames)
+        val safeAssetId = "${sequence.id}_${frameId}"
+            .replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
+            .take(128)
+        val assetPath = "users/$userId/projects/$projectId/storyboard_assets/$safeAssetId"
+        return try {
+            requireUserId(userId)
+            val assetPayload = mapOf(
+                "projectId" to projectId,
+                "ownerId" to userId,
+                "sequenceId" to sequence.id.take(128),
+                "frameId" to frameId.take(128),
+                "localImagePath" to localImagePath.take(1000),
+                "updatedAt" to FieldValue.serverTimestamp()
             )
+            db.document(assetPath).set(assetPayload).await()
+            if (sequence.versionStatus == SequenceVersionStatus.DRAFT) {
+                val updatedFrames = sequence.storyboardFrames.map {
+                    if (it.id == frameId) it.copy(localImagePath = localImagePath) else it
+                }
+                updateDraftSequence(
+                    userId = userId,
+                    projectId = projectId,
+                    sequence = sequence.copy(storyboardFrames = updatedFrames)
+                )
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, assetPath)
+            Result.failure(e)
         }
-        return Result.success(Unit)
     }
 
     suspend fun finalizeSequence(

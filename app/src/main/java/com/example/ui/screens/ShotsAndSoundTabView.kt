@@ -44,17 +44,6 @@ import com.example.data.model.ProductionSequence
 import com.example.ui.components.CinemaSet3DFullscreenDialog
 import com.example.ui.components.CinemaSet3DStageCard
 import com.example.ui.components.OpticalViewfinderCanvas
-import com.example.ui.theme.AmberContainer
-import com.example.ui.theme.AmberGold
-import com.example.ui.theme.IvoryPrimary
-import com.example.ui.theme.MutedStone
-import com.example.ui.theme.ObsidianBg
-import com.example.ui.theme.StudioBorder
-import com.example.ui.theme.StudioDeepPanel
-import com.example.ui.theme.StudioSurfaceElevated
-import com.example.ui.theme.TealAtmos
-import com.example.ui.theme.TealContainer
-import com.example.ui.theme.WarmSilver
 
 @Composable
 fun ShotsAndSoundTabView(
@@ -67,6 +56,7 @@ fun ShotsAndSoundTabView(
     onSaveSchedulePdf: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     var fullscreen3DOpen by remember { mutableStateOf(false) }
     val activeShot = sequence.shotList.getOrNull(selectedShotIndex)
 
@@ -92,11 +82,11 @@ fun ShotsAndSoundTabView(
                     },
                     label = { Text("Escenario 3D", style = MaterialTheme.typography.labelMedium) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AmberContainer,
-                        selectedLabelColor = AmberGold,
-                        selectedLeadingIconColor = AmberGold,
-                        containerColor = StudioDeepPanel,
-                        labelColor = WarmSilver
+                        selectedContainerColor = colors.primaryContainer,
+                        selectedLabelColor = colors.onPrimaryContainer,
+                        selectedLeadingIconColor = colors.onPrimaryContainer,
+                        containerColor = colors.surfaceVariant,
+                        labelColor = colors.onSurfaceVariant
                     ),
                     modifier = Modifier.testTag("stage_mode_3d")
                 )
@@ -111,11 +101,11 @@ fun ShotsAndSoundTabView(
                     },
                     label = { Text("Visor Óptico 2D", style = MaterialTheme.typography.labelMedium) },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = TealContainer,
-                        selectedLabelColor = TealAtmos,
-                        selectedLeadingIconColor = TealAtmos,
-                        containerColor = StudioDeepPanel,
-                        labelColor = WarmSilver
+                        selectedContainerColor = colors.secondaryContainer,
+                        selectedLabelColor = colors.onSecondaryContainer,
+                        selectedLeadingIconColor = colors.onSecondaryContainer,
+                        containerColor = colors.surfaceVariant,
+                        labelColor = colors.onSurfaceVariant
                     ),
                     modifier = Modifier.testTag("stage_mode_2d")
                 )
@@ -142,10 +132,10 @@ fun ShotsAndSoundTabView(
                 onClick = onSaveSchedulePdf,
                 enabled = !isExporting,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TealAtmos,
-                    contentColor = ObsidianBg,
-                    disabledContainerColor = StudioSurfaceElevated,
-                    disabledContentColor = MutedStone
+                    containerColor = colors.secondary,
+                    contentColor = colors.onSecondary,
+                    disabledContainerColor = colors.surfaceVariant,
+                    disabledContentColor = colors.onSurfaceVariant
                 ),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
@@ -172,7 +162,7 @@ fun ShotsAndSoundTabView(
                     Text(
                         text = "No se generaron planos para esta secuencia.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MutedStone
+                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                 }
             }
@@ -181,13 +171,13 @@ fun ShotsAndSoundTabView(
         itemsIndexed(sequence.shotList, key = { idx, s -> "${idx}_${s.shotNumber}" }) { idx, shot ->
             val selected = idx == selectedShotIndex
             Surface(
-                color = if (selected) AmberContainer else StudioDeepPanel,
+                color = if (selected) colors.primaryContainer else colors.surface,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         width = 1.dp,
-                        color = if (selected) AmberGold else StudioBorder,
+                        color = if (selected) colors.primary else colors.outline,
                         shape = RoundedCornerShape(12.dp)
                     )
                     .clickable { onSelectShot(idx) }
@@ -205,28 +195,32 @@ fun ShotsAndSoundTabView(
                         Text(
                             text = "Plano ${shot.shotNumber} · ${shot.shotType}",
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (selected) AmberGold else IvoryPrimary,
+                            color = if (selected) colors.onPrimaryContainer else colors.onSurface,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "${shot.lensMm} · ${shot.durationSec}s",
                             style = MaterialTheme.typography.labelMedium,
-                            color = TealAtmos
+                            color = if (selected) colors.onPrimaryContainer else colors.secondary
                         )
                     }
                     Text(
                         text = "Movimiento: ${shot.movement}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MutedStone
+                        color = if (selected) colors.onPrimaryContainer.copy(alpha = 0.8f) else colors.onSurfaceVariant.copy(alpha = 0.78f)
                     )
                     if (shot.framingNote.isNotBlank()) {
-                        Text(shot.framingNote, style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                        Text(
+                            shot.framingNote,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant
+                        )
                     }
                     if (shot.psychologicalIntent.isNotBlank()) {
                         Text(
                             text = "Intención psicológica: ${shot.psychologicalIntent}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MutedStone
+                            color = if (selected) colors.onPrimaryContainer.copy(alpha = 0.8f) else colors.onSurfaceVariant.copy(alpha = 0.78f)
                         )
                     }
                 }
@@ -240,16 +234,16 @@ fun ShotsAndSoundTabView(
                 icon = Icons.Rounded.GraphicEq
             ) {
                 if (sequence.soundDesign.atmosLayers.isNotEmpty()) {
-                    Text("Capas Atmos", style = MaterialTheme.typography.labelSmall, color = AmberGold)
+                    Text("Capas Atmos", style = MaterialTheme.typography.labelSmall, color = colors.primary)
                     sequence.soundDesign.atmosLayers.forEach { layer ->
-                        Text("• $layer", style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                        Text("• $layer", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                 }
                 SpecRow("Subgraves (LFE)", sequence.soundDesign.subBassCue)
                 if (sequence.soundDesign.foleyDetails.isNotEmpty()) {
-                    Text("Detalles Foley", style = MaterialTheme.typography.labelSmall, color = TealAtmos)
+                    Text("Detalles Foley", style = MaterialTheme.typography.labelSmall, color = colors.secondary)
                     sequence.soundDesign.foleyDetails.forEach { foley ->
-                        Text("• $foley", style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                        Text("• $foley", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                 }
                 SpecRow("Silencios Dramáticos", sequence.soundDesign.silenceBeats)
@@ -273,15 +267,15 @@ fun ShotsAndSoundTabView(
                     SpecRow("Recomendaciones de Dirección", aa.directingRecommendations)
                     if (aa.transcription.isNotBlank()) {
                         Surface(
-                            color = StudioDeepPanel,
+                            color = colors.surfaceVariant,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, StudioBorder, RoundedCornerShape(10.dp))
+                                .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
                         ) {
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Transcripción Verbatim", style = MaterialTheme.typography.labelMedium, color = AmberGold)
-                                Text(aa.transcription, style = MaterialTheme.typography.bodySmall, color = WarmSilver)
+                                Text("Transcripción Verbatim", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+                                Text(aa.transcription, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                             }
                         }
                     }
