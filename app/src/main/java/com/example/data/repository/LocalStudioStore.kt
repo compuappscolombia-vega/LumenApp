@@ -18,12 +18,15 @@ import com.example.data.model.ProductionMilestoneItem
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.ShotSpec
 import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardAssetOverride
 import com.example.data.model.StoryboardCard
+import com.example.data.model.SystemErrorEntry
+import com.example.data.model.SystemErrorStatus
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.UserStudioConfig
 import com.example.data.model.VfxBreakdown
@@ -309,6 +312,8 @@ private data class LocalStudioSnapshot(
     val storyboardAssets: List<StoryboardAssetOverride> = emptyList(),
     val userConfigs: Map<String, UserStudioConfig> = emptyMap(),
     val workspaceDrafts: Map<String, LocalWorkspaceDraftSnapshot> = emptyMap(),
+    val scriptVersions: List<ScriptVersion> = emptyList(),
+    val systemErrors: List<SystemErrorEntry> = emptyList(),
     val globalThemeMode: String = "dark"
 )
 
@@ -446,6 +451,13 @@ class LocalStudioStore(
                 .associate { it.frameId to it.localImagePath }
         }
 
+    fun observeScriptVersions(projectId: String): Flow<List<ScriptVersion>> =
+        snapshotFlow.map { snap ->
+            snap.scriptVersions
+                .filter { it.projectId == projectId }
+                .sortedWith(compareByDescending<ScriptVersion> { it.versionNumber }.thenByDescending { it.createdAtMillis })
+        }
+
     fun observeAgentMessages(projectId: String): Flow<List<AgentMessage>> =
         snapshotFlow.map { snap ->
             snap.messages
@@ -460,6 +472,94 @@ class LocalStudioStore(
                 .sortedByDescending { it.createdAtMillis }
                 .map { it.toModel() }
         }
+
+    fun observeSystemErrors(): Flow<List<SystemErrorEntry>> =
+        snapshotFlow.map { snap ->
+            snap.systemErrors.sortedByDescending { it.timestampMillis }
+        }
+
+    suspend fun recordSystemError(entry: SystemErrorEntry): Result<SystemErrorEntry> {
+        val normalized = entry.copy(
+            id = entry.id.ifBlank { newId("err") },
+            timestampMillis = if (entry.timestampMillis > 0L) entry.timestampMillis else System.currentTimeMillis(),
+            title = entry.title.trim().take(160),
+            message = entry.message.trim().take(500),
+            technicalDetail = entry.technicalDetail.trim().take(500),
+            rootCauseHint = entry.rootCauseHint.trim().take(400),
+            suggestedFix = entry.suggestedFix.trim().take(400)
+        )
+        mutate { snap ->
+            val next = (listOf(normalized) + snap.systemErrors.filterNot { it.id == normalized.id }).take(80)
+            snap.copy(systemErrors = next)
+        }
+        return Result.success(normalized)
+    }
+
+    suspend fun markSystemErrorRepaired(errorId: String, repairNote: String): Result<Unit> {
+        val now = System.currentTimeMillis()
+        val cleanNote = repairNote.trim().ifBlank { "Reparado y verificado por el asistente del sistema." }.take(400)
+        mutate { snap ->
+            snap.copy(
+                systemErrors = snap.systemErrors.map { err ->
+                    if (err.id == errorId) {
+                        err.copy(
+                            status = SystemErrorStatus.REPAIRED,
+                            repairNote = cleanNote,
+                            repairedAtMillis = now
+                        )
+                    } else err
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun markAllOpenErrorsRepaired(repairNote: String): Result<Int> {
+        val now = System.currentTimeMillis()
+        val cleanNote = repairNote.trim().ifBlank { "Auto-reparación integral aplicada." }.take(400)
+        var repairedCount = 0
+        mutate { snap ->
+            repairedCount = snap.systemErrors.count { it.status == SystemErrorStatus.OPEN }
+            snap.copy(
+                systemErrors = snap.systemErrors.map { err ->
+                    if (err.status == SystemErrorStatus.OPEN) {
+                        err.copy(
+                            status = SystemErrorStatus.REPAIRED,
+                            repairNote = cleanNote,
+                            repairedAtMillis = now
+                        )
+                    } else err
+                }
+            )
+        }
+        return Result.success(repairedCount)
+    }
+
+    suspend fun clearRepairedSystemErrors(): Result<Unit> {
+        mutate { snap ->
+            snap.copy(
+                systemErrors = snap.systemErrors.filterNot { it.status == SystemErrorStatus.REPAIRED }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun clearBrokenStoryboardPaths(frameIds: Set<String>): Result<Unit> {
+        if (frameIds.isEmpty()) return Result.success(Unit)
+        mutate { snap ->
+            snap.copy(
+                storyboardAssets = snap.storyboardAssets.filterNot { it.frameId in frameIds },
+                sequences = snap.sequences.map { seq ->
+                    seq.copy(
+                        storyboardFrames = seq.storyboardFrames.map { frame ->
+                            if (frame.id in frameIds) frame.copy(localImagePath = null) else frame
+                        }
+                    )
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
 
     suspend fun createProject(
         userId: String,
@@ -540,8 +640,79 @@ class LocalStudioStore(
                 sequences = snap.sequences.filterNot { it.projectId == projectId },
                 messages = snap.messages.filterNot { it.projectId == projectId },
                 milestones = snap.milestones.filterNot { it.projectId == projectId },
-                storyboardAssets = snap.storyboardAssets.filterNot { it.projectId == projectId }
+                storyboardAssets = snap.storyboardAssets.filterNot { it.projectId == projectId },
+                scriptVersions = snap.scriptVersions.filterNot { it.projectId == projectId }
             )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun saveScriptVersion(
+        userId: String,
+        projectId: String,
+        sequence: ProductionSequence,
+        versionLabel: String,
+        changeNote: String
+    ): Result<ScriptVersion> {
+        val now = System.currentTimeMillis()
+        val safeScenes = sequence.screenplay.take(200)
+        val wordCount = ScriptVersion.computeWordCount(safeScenes)
+        lateinit var created: ScriptVersion
+        mutate { snap ->
+            val maxNum = snap.scriptVersions
+                .filter { it.projectId == projectId && it.sequenceId == sequence.id }
+                .maxOfOrNull { it.versionNumber } ?: 0
+            val nextNum = (maxNum + 1).coerceIn(1, 10000)
+            val cleanLabel = versionLabel.trim().ifBlank { "v$nextNum" }.take(80)
+            created = ScriptVersion(
+                id = newId("sver"),
+                projectId = projectId,
+                ownerId = userId,
+                sequenceId = sequence.id,
+                sequenceTitle = sequence.title.trim().ifBlank { "Secuencia" }.take(200),
+                versionNumber = nextNum,
+                versionLabel = cleanLabel,
+                changeNote = changeNote.trim().take(400),
+                sceneCount = safeScenes.size.coerceIn(0, 500),
+                wordCount = wordCount.coerceIn(0, 500000),
+                scenes = safeScenes,
+                createdAtMillis = now,
+                updatedAtMillis = now
+            )
+            snap.copy(scriptVersions = snap.scriptVersions + created)
+        }
+        return Result.success(created)
+    }
+
+    suspend fun updateScriptVersionMetadata(
+        versionId: String,
+        versionLabel: String,
+        changeNote: String
+    ): Result<Unit> {
+        val cleanLabel = versionLabel.trim().take(80)
+        if (cleanLabel.isBlank()) {
+            return Result.failure(IllegalArgumentException("La etiqueta de versión es obligatoria."))
+        }
+        val now = System.currentTimeMillis()
+        mutate { snap ->
+            snap.copy(
+                scriptVersions = snap.scriptVersions.map { item ->
+                    if (item.id == versionId) {
+                        item.copy(
+                            versionLabel = cleanLabel,
+                            changeNote = changeNote.trim().take(400),
+                            updatedAtMillis = now
+                        )
+                    } else item
+                }
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun deleteScriptVersion(versionId: String): Result<Unit> {
+        mutate { snap ->
+            snap.copy(scriptVersions = snap.scriptVersions.filterNot { it.id == versionId })
         }
         return Result.success(Unit)
     }

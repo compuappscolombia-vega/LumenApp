@@ -12,6 +12,10 @@
     <string name="auth_privacy_note">Tu espacio de trabajo, biblia de continuidad y memoria de aprendizaje permanecen aislados de forma privada por tu cuenta de Google.</string>
     <string name="auth_error_cancelled">Inicio de sesión cancelado.</string>
     <string name="auth_troubleshooting_hint">Sugerencia: confirma que tengas una cuenta de Google configurada en Ajustes del dispositivo/emulador y conexión a internet.</string>
+    <string name="auth_restoring_session">Restaurando sesión persistente de Google…</string>
+    <string name="auth_remembered_account">Cuenta vinculada guardada: %1$s</string>
+    <string name="account_resync_cta">Sincronizar cuenta ahora</string>
+    <string name="cd_folder_gallery_grid">Galería visual en cuadrícula de la carpeta</string>
 
     <!-- Navigation & TopBar -->
     <string name="nav_agent">Agente</string>

@@ -104,7 +104,7 @@
         },
         "productionFolders": {
           "type": "array",
-          "description": "Carpetas de producción inicializadas automáticamente según la plantilla elegida (<=20)."
+          "description": "Carpetas de producción inicializadas automáticamente según la plantilla elegida, con notas y linkedSequenceIds para organizar guiones y storyboards (<=20)."
         },
         "sequencesCount": {
           "type": "integer",
@@ -321,6 +321,42 @@
         }
       },
       "required": ["ownerId", "category", "insight", "rating", "sourceProjectTitle", "createdAt"]
+    },
+    "ScriptVersion": {
+      "title": "ScriptVersion",
+      "description": "Instantánea versionada de un guion dentro de un proyecto cinematográfico para guardar y alternar revisiones en Cloud Firestore.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "sequenceId": { "type": "string" },
+        "sequenceTitle": { "type": "string" },
+        "versionNumber": { "type": "integer" },
+        "versionLabel": { "type": "string" },
+        "changeNote": { "type": "string" },
+        "sceneCount": { "type": "integer" },
+        "wordCount": { "type": "integer" },
+        "scenes": {
+          "type": "array",
+          "description": "Lista de escenas (ScreenplayScene) guardadas en esta versión."
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "projectId",
+        "ownerId",
+        "sequenceId",
+        "sequenceTitle",
+        "versionNumber",
+        "versionLabel",
+        "changeNote",
+        "sceneCount",
+        "wordCount",
+        "scenes",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -335,6 +371,10 @@
     "/users/{userId}/projects/{projectId}/sequences/{sequenceId}": {
       "schema": { "$ref": "#/entities/ProjectSequence" },
       "description": "Secuencias y expedientes cinematográficos dentro de un proyecto."
+    },
+    "/users/{userId}/projects/{projectId}/script_versions/{versionId}": {
+      "schema": { "$ref": "#/entities/ScriptVersion" },
+      "description": "Historial de versiones de guion guardadas por proyecto para alternar revisiones."
     },
     "/users/{userId}/projects/{projectId}/milestones/{milestoneId}": {
       "schema": { "$ref": "#/entities/ProductionMilestone" },

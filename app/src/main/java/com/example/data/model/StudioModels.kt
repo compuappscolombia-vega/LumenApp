@@ -483,7 +483,8 @@ data class ProductionFolder(
     val category: String = "script", // script | bible | schedule | visual | sound | vfx | field
     val description: String = "",
     val notes: String = "",
-    val targetTab: String = "screenplay" // screenplay | vision | shots | storyboard | agent
+    val targetTab: String = "screenplay", // screenplay | vision | shots | storyboard | agent
+    val linkedSequenceIds: List<String> = emptyList()
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "id" to id.take(64),
@@ -491,7 +492,8 @@ data class ProductionFolder(
         "category" to category.take(40),
         "description" to description.take(300),
         "notes" to notes.take(2000),
-        "targetTab" to targetTab.take(40)
+        "targetTab" to targetTab.take(40),
+        "linkedSequenceIds" to linkedSequenceIds.take(50)
     )
 
     companion object {
@@ -501,7 +503,11 @@ data class ProductionFolder(
             category = map["category"] as? String ?: "script",
             description = map["description"] as? String ?: "",
             notes = map["notes"] as? String ?: "",
-            targetTab = map["targetTab"] as? String ?: "screenplay"
+            targetTab = map["targetTab"] as? String ?: "screenplay",
+            linkedSequenceIds = (map["linkedSequenceIds"] as? List<*>)
+                ?.mapNotNull { it as? String }
+                ?.take(50)
+                ?: emptyList()
         )
     }
 }
@@ -680,5 +686,101 @@ data class UserStudioConfig(
 ) {
     val isDarkMode: Boolean get() = themeMode != "light"
 }
+
+enum class SystemErrorSource(val wireValue: String, val label: String) {
+    AI("ai", "Motor IA Gemini"),
+    FIRESTORE("firestore", "Cloud Firestore"),
+    AUTH("auth", "Sesión Google"),
+    STORAGE("storage", "Archivos y PDF"),
+    AUDIO("audio", "Audio y Micrófono"),
+    SYSTEM("system", "Sistema y Validación")
+}
+
+enum class SystemErrorSeverity(val wireValue: String, val label: String) {
+    CRITICAL("critical", "Crítico"),
+    WARNING("warning", "Advertencia"),
+    INFO("info", "Diagnóstico")
+}
+
+enum class SystemErrorStatus(val wireValue: String, val label: String) {
+    OPEN("open", "Pendiente"),
+    REPAIRED("repaired", "Reparado")
+}
+
+enum class SystemRepairAction(val wireValue: String, val label: String) {
+    REPAIR_SYNC_AND_CACHE("repair_sync_cache", "Reparar caché y sincronización"),
+    RESET_CORRUPT_DRAFTS("reset_corrupt_drafts", "Sanear borradores y selección"),
+    VERIFY_AUTH_AND_AI("verify_auth_ai", "Verificar sesión y App Check"),
+    CLEAR_INVALID_MEDIA("clear_invalid_media", "Reparar adjuntos / storyboards"),
+    RUN_FULL_SELF_CHECK("run_full_self_check", "Auto-reparación integral")
+}
+
+@Serializable
+data class SystemErrorEntry(
+    val id: String = "",
+    val timestampMillis: Long = 0L,
+    val source: SystemErrorSource = SystemErrorSource.SYSTEM,
+    val severity: SystemErrorSeverity = SystemErrorSeverity.WARNING,
+    val title: String = "",
+    val message: String = "",
+    val technicalDetail: String = "",
+    val rootCauseHint: String = "",
+    val suggestedFix: String = "",
+    val status: SystemErrorStatus = SystemErrorStatus.OPEN,
+    val repairAction: SystemRepairAction = SystemRepairAction.RUN_FULL_SELF_CHECK,
+    val repairNote: String = "",
+    val repairedAtMillis: Long = 0L,
+    val projectId: String = ""
+)
+
+@Keep
+@IgnoreExtraProperties
+data class ScriptVersionDoc(
+    @DocumentId val id: String = "",
+    val projectId: String = "",
+    val ownerId: String = "",
+    val sequenceId: String = "",
+    val sequenceTitle: String = "",
+    val versionNumber: Long = 1L,
+    val versionLabel: String = "",
+    val changeNote: String = "",
+    val sceneCount: Long = 0L,
+    val wordCount: Long = 0L,
+    val scenes: List<ScreenplayScene>? = null,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+@Serializable
+data class ScriptVersion(
+    val id: String = "",
+    val projectId: String = "",
+    val ownerId: String = "",
+    val sequenceId: String = "",
+    val sequenceTitle: String = "",
+    val versionNumber: Int = 1,
+    val versionLabel: String = "",
+    val changeNote: String = "",
+    val sceneCount: Int = 0,
+    val wordCount: Int = 0,
+    val scenes: List<ScreenplayScene> = emptyList(),
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
+) {
+    companion object {
+        fun computeWordCount(scenes: List<ScreenplayScene>): Int =
+            scenes.sumOf { scene ->
+                val slugWords = scene.slugline.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+                val beatWords = scene.beats.sumOf { beat ->
+                    beat.text.trim().split(Regex("\\s+")).count { it.isNotBlank() } +
+                        (beat.character?.trim()?.split(Regex("\\s+"))?.count { it.isNotBlank() } ?: 0)
+                }
+                slugWords + beatWords
+            }
+    }
+}
+
 
 

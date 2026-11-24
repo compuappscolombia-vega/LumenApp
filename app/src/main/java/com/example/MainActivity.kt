@@ -85,6 +85,7 @@ private fun LumenReelRoot(
         .collectAsStateWithLifecycle(initialValue = studioRepository.getCachedThemeDark())
 
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
+    var persistedSession by remember { mutableStateOf(authRepository.getSessionSnapshot(context)) }
     var authStatusMessage by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(Unit) {
@@ -102,6 +103,7 @@ private fun LumenReelRoot(
     LaunchedEffect(currentUser?.uid) {
         val user = currentUser
         if (user != null) {
+            persistedSession = authRepository.recordSignedInSession(context, user)
             withContext(Dispatchers.IO) {
                 studioRepository.ensureUserProfile(
                     userId = user.uid,
@@ -118,20 +120,26 @@ private fun LumenReelRoot(
             AuthScreen(
                 authRepository = authRepository,
                 onSignedIn = {
-                    currentUser = Firebase.auth.currentUser
+                    val signedIn = Firebase.auth.currentUser
+                    if (signedIn != null) {
+                        persistedSession = authRepository.recordSignedInSession(context, signedIn)
+                    }
+                    currentUser = signedIn
                 }
             )
         } else {
             key(user.uid) {
                 MainStudioScreen(
                     currentUser = user,
+                    persistedSession = persistedSession,
                     authStatusMessage = authStatusMessage,
                     onClearAuthStatus = { authStatusMessage = null },
                     onOptionalGoogleSignIn = {
                         scope.launch {
                             authStatusMessage = null
                             authRepository.signInInteractive(context)
-                                .onSuccess {
+                                .onSuccess { signedIn ->
+                                    persistedSession = authRepository.recordSignedInSession(context, signedIn)
                                     currentUser = Firebase.auth.currentUser
                                 }
                                 .onFailure { err ->
@@ -140,9 +148,25 @@ private fun LumenReelRoot(
                                 }
                         }
                     },
+                    onResyncGoogleSession = {
+                        scope.launch {
+                            authStatusMessage = null
+                            authRepository.resyncActiveAccount(context)
+                                .onSuccess { synced ->
+                                    persistedSession = authRepository.recordSignedInSession(context, synced)
+                                    currentUser = Firebase.auth.currentUser
+                                    authStatusMessage = "Sesión Google y Cloud Firestore sincronizadas (${synced.email ?: synced.uid})."
+                                }
+                                .onFailure { err ->
+                                    authStatusMessage = err.localizedMessage
+                                        ?: "No se pudo sincronizar la sesión de Google."
+                                }
+                        }
+                    },
                     onSignOut = {
                         scope.launch {
                             authRepository.signOut(context)
+                            persistedSession = authRepository.getSessionSnapshot(context)
                             currentUser = Firebase.auth.currentUser
                         }
                     },

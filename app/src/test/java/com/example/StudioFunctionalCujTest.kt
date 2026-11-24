@@ -4,6 +4,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
@@ -29,30 +33,42 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.ShotSpec
 import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
+import com.example.data.model.SystemErrorSource
+import com.example.data.model.SystemErrorStatus
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.UserStudioConfig
 import com.example.data.model.WorkspaceTab
+import com.example.data.repository.AuthRepository
 import com.example.data.repository.LOCAL_GUEST_UID
 import com.example.data.repository.LocalStudioStore
+import com.example.data.repository.PersistedAccountSession
 import com.example.data.repository.StudioRepository
 import com.example.data.util.LearningEngine
+import com.example.data.util.ManualQuickAction
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.components.AccountDialog
+import com.example.ui.components.InteractiveManualDialog
 import com.example.ui.components.NewProjectDialog
 import com.example.ui.components.ProductionCalendarDialog
+import com.example.ui.components.ProjectFolderManagerDialog
+import com.example.ui.components.ScriptVersionsDialog
 import com.example.ui.components.SourceIngestContent
+import com.example.ui.components.StoryboardFolderGalleryDialog
 import com.example.ui.components.StudioLoadingOverlay
+import com.example.ui.components.SystemErrorCenterDialog
 import com.example.ui.components.readClipboardText
 import com.example.ui.screens.MetricsDashboardScreen
 import com.example.ui.screens.ProjectDashboardScreen
 import com.example.ui.screens.ScreenplayTabView
 import com.example.ui.screens.ShotsAndSoundTabView
+import com.example.ui.screens.StoryboardTabView
 import com.example.ui.theme.LumenReelTheme
 import com.example.ui.viewmodel.StudioUiState
 import com.example.ui.viewmodel.StudioViewModel
@@ -197,6 +213,8 @@ class StudioFunctionalCujTest {
         context = ApplicationProvider.getApplicationContext()
         File(context.filesDir, "lumenreel_local_studio_v1.json").delete()
         context.getSharedPreferences("lumenreel_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences("lumenreel_studio_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences("lumenreel_session_prefs", Context.MODE_PRIVATE).edit().clear().commit()
         Dispatchers.setMain(testDispatcher)
     }
 
@@ -1095,6 +1113,557 @@ class StudioFunctionalCujTest {
         assertNotNull(savedCfg)
         assertEquals("16:9", savedCfg?.defaultAspectRatio)
         assertEquals(ThinkingDepth.DEEP.name, savedCfg?.defaultThinkingDepth)
+    }
+
+    @Test
+    fun `script input formatting snippets update metrics and trigger Gemini categorization`() {
+        val proj = ProductionProject(id = "proj_script_1", ownerId = LOCAL_GUEST_UID, title = "Faro Nocturno")
+        var produceTriggered = false
+
+        composeRule.setContent {
+            var draft by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(IngestDraftState(sequenceTitle = "Escena 1"))
+            }
+            LumenReelTheme {
+                SourceIngestContent(
+                    project = proj,
+                    draft = draft,
+                    isProducing = false,
+                    isAnalyzingAudio = false,
+                    latestAudioReport = null,
+                    onDraftChange = { transform -> draft = transform(draft) },
+                    onClose = {},
+                    onSaveBible = {},
+                    onAnalyzeAudio = {},
+                    onProduceSequence = { produceTriggered = true },
+                    onCreateManualDraft = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("script_snippet_int").performScrollTo().performClick()
+        composeRule.onNodeWithTag("script_snippet_camera").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("script_editor_metrics_bar")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertTextContains("Escenas: 1", substring = true)
+            .assertTextContains("Cues: 1", substring = true)
+        composeRule.onNodeWithTag("gemini_technical_categories_card")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("produce_sequence_button").performClick()
+        assertTrue(produceTriggered)
+    }
+
+    @Test
+    fun `ProjectFolderManagerDialog creates folders organizes sequences and persists via ViewModel`() = runTest {
+        val store = LocalStudioStore(context, testDispatcher)
+        val repo = StudioRepository(databaseId = "unused", localStore = store)
+        val ai = FakeStudioAiClient()
+        val vm = StudioViewModel(repo, ai, LOCAL_GUEST_UID)
+        val job = backgroundScope.launch { vm.projectsUiState.collect {} }
+
+        val template = ProjectTemplateCatalog.findById("short_film")
+        vm.createProject(
+            title = "Puerto Bruma",
+            genreStyle = template.defaultStyle,
+            defaultSourceType = SourceMaterialType.STORY,
+            continuityBible = "",
+            templateId = template.id,
+            productionFolders = template.folders
+        )
+        var ui = awaitUiWhere(vm) { it.activeProject?.title == "Puerto Bruma" }
+        val proj = ui.activeProject!!
+
+        vm.createManualDraftSequence(
+            project = proj,
+            sequenceTitle = "Secuencia del Muelle",
+            sourceType = SourceMaterialType.STORY,
+            directorStyle = template.defaultStyle,
+            aspectRatio = "2.39:1",
+            continuityBible = "",
+            sourceText = "INT. MUELLE - NOCHE\n\nLa bruma cubre los amarres."
+        )
+        ui = awaitUiWhere(vm) { (it.activeProject?.sequences?.size ?: 0) == 1 }
+        val activeProj = ui.activeProject!!
+        val seq = activeProj.sequences.first()
+        val scriptFolder = activeProj.productionFolders.first()
+
+        var openedTab: WorkspaceTab? = null
+        composeRule.setContent {
+            LumenReelTheme {
+                ProjectFolderManagerDialog(
+                    project = activeProj,
+                    onDismiss = {},
+                    onCreateFolder = { name, cat, desc -> vm.addProductionFolder(activeProj, name, cat, desc) },
+                    onUpdateFolderNotes = { fid, notes -> vm.updateProductionFolderNotes(activeProj, fid, notes) },
+                    onDeleteFolder = { fid -> vm.deleteProductionFolder(activeProj, fid) },
+                    onAssignSequenceToFolder = { fid, sid -> vm.assignSequenceToFolder(activeProj, fid, sid) },
+                    onRemoveSequenceFromFolder = { fid, sid -> vm.removeSequenceFromFolder(activeProj, fid, sid) },
+                    onOpenWorkspaceTab = { _, _, tab -> openedTab = tab },
+                    onOpenScriptEditor = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("pm_toggle_create_folder_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("pm_new_folder_name_input").performScrollTo().performTextInput("Storyboards_Extra")
+        composeRule.onNodeWithTag("pm_folder_category_visual").performScrollTo().performClick()
+        composeRule.onNodeWithTag("pm_confirm_create_folder_button").performScrollTo().performClick()
+
+        ui = awaitUiWhere(vm) { (it.activeProject?.productionFolders?.size ?: 0) == 6 }
+        assertEquals("06_Storyboards_Extra", ui.activeProject!!.productionFolders.last().name)
+
+        composeRule.onNodeWithTag("pm_assign_seq_${scriptFolder.id}_${seq.id}").performScrollTo().performClick()
+        ui = awaitUiWhere(vm) {
+            it.activeProject?.productionFolders?.firstOrNull()?.linkedSequenceIds?.contains(seq.id) == true
+        }
+        assertTrue(ui.activeProject!!.productionFolders.first().linkedSequenceIds.contains(seq.id))
+
+        composeRule.onNodeWithTag("pm_open_storyboard_${scriptFolder.id}").performScrollTo().performClick()
+        assertEquals(WorkspaceTab.STORYBOARD, openedTab)
+        job.cancel()
+    }
+
+    @Test
+    fun `SystemErrorCenterDialog and ViewModel log errors and apply automated repair`() = runTest {
+        val store1 = LocalStudioStore(context, testDispatcher)
+        val repo1 = StudioRepository(databaseId = "unused", localStore = store1)
+        val ai = FakeStudioAiClient()
+        val vm1 = StudioViewModel(repo1, ai, LOCAL_GUEST_UID)
+        val job1 = backgroundScope.launch { vm1.projectsUiState.collect {} }
+
+        vm1.createProject("Reparable Film", "Drama", SourceMaterialType.STORY, "")
+        awaitUiWhere(vm1) { it.activeProject?.title == "Reparable Film" }
+
+        vm1.logSystemError(
+            source = SystemErrorSource.AI,
+            message = "HTTP 403 App Check token invalid en user@test.com",
+            contextHint = "produceSequence"
+        )
+        var ui = awaitUiWhere(vm1) { it.openErrorCount == 1 }
+        val err = ui.systemErrors.first()
+        assertEquals(SystemErrorStatus.OPEN, err.status)
+
+        var fullRepairClicked = false
+        composeRule.setContent {
+            LumenReelTheme {
+                SystemErrorCenterDialog(
+                    errors = ui.systemErrors,
+                    lastRepairSummary = ui.lastRepairSummary,
+                    onDismiss = {},
+                    onRepairError = { id -> vm1.repairSystemError(id, checkFilesOnDisk = false) },
+                    onRunFullRepair = {
+                        fullRepairClicked = true
+                        vm1.runFullSystemRepair(checkFilesOnDisk = false)
+                    },
+                    onMarkRepaired = { id -> vm1.markSystemErrorRepaired(id) },
+                    onClearRepaired = vm1::clearRepairedSystemErrors,
+                    onExportReport = { _ -> }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("system_error_card_${err.id}").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("run_full_repair_button").performScrollTo().performClick()
+        assertTrue(fullRepairClicked)
+
+        ui = awaitUiWhere(vm1) {
+            it.openErrorCount == 0 &&
+                it.systemErrors.firstOrNull()?.status == SystemErrorStatus.REPAIRED
+        }
+        assertEquals(SystemErrorStatus.REPAIRED, ui.systemErrors.first().status)
+        job1.cancel()
+
+        // Reload from disk to confirm error & repair persistence
+        val store2 = LocalStudioStore(context, testDispatcher)
+        val persistedErrors = store2.observeSystemErrors().first()
+        assertEquals(1, persistedErrors.size)
+        assertEquals(SystemErrorStatus.REPAIRED, persistedErrors.first().status)
+    }
+
+    @Test
+    fun `InteractiveManualDialog filters guides switches aspect framing and triggers PDF actions`() {
+        var savePdfClicked = false
+        var sharePdfClicked = false
+        var quickActionTriggered: ManualQuickAction? = null
+
+        composeRule.setContent {
+            LumenReelTheme {
+                InteractiveManualDialog(
+                    onDismiss = {},
+                    onQuickAction = { quickActionTriggered = it },
+                    onSaveManualPdf = { savePdfClicked = true },
+                    onShareManualPdf = { sharePdfClicked = true }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("manual_aspect_guide").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("manual_aspect_chip_1.43:1").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("manual_aspect_note").assertTextContains("IMAX 65mm", substring = true)
+
+        composeRule.onNodeWithTag("manual_topic_errores").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("manual_section_error_repair").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("manual_jump_error_repair").performScrollTo().performClick()
+        assertEquals(ManualQuickAction.OPEN_ERROR_CENTER, quickActionTriggered)
+
+        composeRule.onNodeWithTag("manual_checklist_0").performScrollTo().performClick()
+        composeRule.onNodeWithTag("manual_save_pdf_button").performClick()
+        assertTrue(savePdfClicked)
+        composeRule.onNodeWithTag("manual_share_pdf_button").performClick()
+        assertTrue(sharePdfClicked)
+    }
+
+    @Test
+    fun `script versions save switch on DRAFT clone on FINAL update metadata delete and persist across reloads`() = runTest {
+        val store1 = LocalStudioStore(context, testDispatcher)
+        val repo1 = StudioRepository(databaseId = "unused", localStore = store1)
+        val ai = FakeStudioAiClient()
+        val vm1 = StudioViewModel(repo1, ai, LOCAL_GUEST_UID)
+        val job1 = backgroundScope.launch { vm1.projectsUiState.collect {} }
+
+        vm1.createProject("Versiones Film", "Thriller Psicológico Neo-Noir", SourceMaterialType.STORY, "")
+        var ui = awaitUiWhere(vm1) { it.activeProject?.title == "Versiones Film" }
+        val proj = ui.activeProject!!
+
+        vm1.createManualDraftSequence(
+            project = proj,
+            sequenceTitle = "Secuencia Muelle",
+            sourceType = SourceMaterialType.STORY,
+            directorStyle = "Thriller Psicológico Neo-Noir",
+            aspectRatio = "2.39:1",
+            continuityBible = "",
+            sourceText = "Primera versión de acción en el muelle bajo lluvia."
+        )
+        ui = awaitUiWhere(vm1) { it.activeSequence?.title == "Secuencia Muelle" }
+        val seq = ui.activeSequence!!
+
+        // Save Version 1
+        vm1.saveScriptVersion(ui.activeProject!!, seq, "v1.0 Original", "Guion base")
+        ui = awaitUiWhere(vm1) { it.scriptVersions.size == 1 }
+        val v1 = ui.scriptVersions.first()
+        assertEquals(1, v1.versionNumber)
+        assertEquals("v1.0 Original", v1.versionLabel)
+
+        // Edit draft screenplay & save Version 2
+        vm1.saveScreenplaySceneDraft(
+            projectId = proj.id,
+            sequence = ui.activeSequence!!,
+            sceneNumber = "2",
+            slugline = "EXT. FARO - AMANECER",
+            timeOfDay = "AMANECER",
+            actionText = "El faro apaga su haz dorado.",
+            dialogueCharacter = "ELENA",
+            dialogueText = "Todo terminó.",
+            editingIndex = null
+        )
+        ui = awaitUiWhere(vm1) { (it.activeSequence?.screenplay?.size ?: 0) == 2 }
+        vm1.saveScriptVersion(ui.activeProject!!, ui.activeSequence!!, "v2.0 Con Escena 2", "Añadido amanecer")
+        ui = awaitUiWhere(vm1) { it.scriptVersions.size == 2 }
+        val v2 = ui.scriptVersions.first { it.versionNumber == 2 }
+
+        // Switch back to v1 in-place on DRAFT sequence
+        vm1.switchScriptVersion(ui.activeProject!!, ui.activeSequence, v1)
+        ui = awaitUiWhere(vm1) {
+            it.activeSequence?.screenplay?.size == 1 &&
+                it.activeScriptVersionId == v1.id
+        }
+        assertEquals(1, ui.activeSequence?.screenplay?.size)
+
+        // Update metadata of v2
+        vm1.updateScriptVersionMetadata(proj.id, v2.id, "v2.1 Revisada", "Nota actualizada")
+        ui = awaitUiWhere(vm1) {
+            it.scriptVersions.any { it.id == v2.id && it.versionLabel == "v2.1 Revisada" }
+        }
+
+        // Finalize sequence and switch to v2 -> must clone into a new DRAFT sequence
+        vm1.approveFinalVersion(ui.activeProject!!, ui.activeSequence!!)
+        ui = awaitUiWhere(vm1) { it.activeSequence?.versionStatus == SequenceVersionStatus.FINAL }
+        val finalSeq = ui.activeSequence!!
+        vm1.switchScriptVersion(ui.activeProject!!, finalSeq, v2)
+        ui = awaitUiWhere(vm1) { (it.activeProject?.sequences?.size ?: 0) == 2 }
+        assertEquals(2, ui.activeProject!!.sequences.size)
+        assertEquals(SequenceVersionStatus.DRAFT, ui.activeSequence?.versionStatus)
+        assertEquals(2, ui.activeSequence?.screenplay?.size)
+        job1.cancel()
+
+        // Reload via fresh store and ViewModel & verify persistence + delete
+        val store2 = LocalStudioStore(context, testDispatcher)
+        val repo2 = StudioRepository(databaseId = "unused", localStore = store2)
+        val vm2 = StudioViewModel(repo2, ai, LOCAL_GUEST_UID)
+        val job2 = backgroundScope.launch { vm2.projectsUiState.collect {} }
+
+        var ui2 = awaitUiWhere(vm2) { it.scriptVersions.size == 2 }
+        assertEquals(2, ui2.scriptVersions.size)
+        vm2.deleteScriptVersion(proj.id, v1.id)
+        ui2 = awaitUiWhere(vm2) { it.scriptVersions.size == 1 }
+        assertEquals(1, ui2.scriptVersions.size)
+        job2.cancel()
+    }
+
+    @Test
+    fun `ScriptVersionsDialog and ScreenplayTabView expose save and switch version controls`() {
+        val sampleScene1 = ScreenplayScene(
+            sceneNumber = "1",
+            slugline = "INT. ESTUDIO - NOCHE",
+            timeOfDay = "NOCHE",
+            beats = listOf(ScreenplayBeat("action", text = "Luz azul sobre la mesa."))
+        )
+        val seq = ProductionSequence(
+            id = "seq_sv_1",
+            projectId = "proj_sv_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Secuencia 1",
+            versionStatus = SequenceVersionStatus.DRAFT,
+            screenplay = listOf(sampleScene1)
+        )
+        val proj = ProductionProject(
+            id = "proj_sv_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Película Versiones",
+            sequences = listOf(seq)
+        )
+        val existingVersion = ScriptVersion(
+            id = "ver_1",
+            projectId = proj.id,
+            sequenceId = seq.id,
+            sequenceTitle = seq.title,
+            versionNumber = 1,
+            versionLabel = "v1.0 Base",
+            changeNote = "Primer borrador",
+            sceneCount = 1,
+            wordCount = 10,
+            scenes = listOf(sampleScene1)
+        )
+
+        var savedLabel = ""
+        var switchedVersion: ScriptVersion? = null
+
+        composeRule.setContent {
+            LumenReelTheme {
+                var showVersionsDialog by remember { mutableStateOf(false) }
+                androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    ScreenplayTabView(
+                        sequence = seq,
+                        isExporting = false,
+                        onOpenIngest = {},
+                        onSaveSceneDraft = { _, _, _, _, _, _, _ -> },
+                        onExportPdf = {},
+                        onExportMarkdown = {},
+                        onExportFountain = {},
+                        scriptVersions = listOf(existingVersion),
+                        activeScriptVersionId = existingVersion.id,
+                        onOpenScriptVersions = { showVersionsDialog = true }
+                    )
+                    if (showVersionsDialog) {
+                        ScriptVersionsDialog(
+                            project = proj,
+                            activeSequence = seq,
+                            versions = listOf(existingVersion),
+                            activeVersionId = existingVersion.id,
+                            onDismiss = { showVersionsDialog = false },
+                            onSaveVersion = { lbl, _ -> savedLabel = lbl },
+                            onSwitchVersion = { v -> switchedVersion = v },
+                            onUpdateMetadata = { _, _, _ -> },
+                            onDeleteVersion = {}
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("screenplay_versions_button")
+            .assertIsDisplayed()
+            .assertTextContains("Versiones en Firestore (1)", substring = true)
+        composeRule.onNodeWithTag("screenplay_versions_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("script_versions_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("script_save_version_button").performScrollTo().performClick()
+        assertTrue(savedLabel.isNotBlank())
+        composeRule.onNodeWithTag("script_switch_version_ver_1").performScrollTo().performClick()
+        assertEquals("ver_1", switchedVersion?.id)
+    }
+
+    @Config(sdk = [35], qualifiers = "w412dp-h915dp")
+    @Test
+    fun `StoryboardFolderGalleryDialog opens from folder manager renders grid filters and lightbox`() {
+        val folderList = ProjectTemplateCatalog.defaultFoldersFor("short_film")
+        val visualFolder = folderList.first { it.category == "visual" }
+        val imgFile = File(context.filesDir, "gallery_test_sb.png").apply { writeText("png") }
+        val frame1 = StoryboardCard(
+            id = "sb_g1",
+            title = "Plano 1: Muelle",
+            shotRef = "Plano 01",
+            visualPrompt = "Wide harbor fog",
+            localImagePath = imgFile.absolutePath
+        )
+        val frame2 = StoryboardCard(
+            id = "sb_g2",
+            title = "Plano 2: Faro",
+            shotRef = "Plano 02",
+            visualPrompt = "Close up lighthouse",
+            localImagePath = null
+        )
+        val seq = ProductionSequence(
+            id = "seq_gal_1",
+            projectId = "proj_gal_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Secuencia Niebla",
+            storyboardFrames = listOf(frame1, frame2)
+        )
+        val proj = ProductionProject(
+            id = "proj_gal_1",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Galería Film",
+            productionFolders = folderList,
+            sequences = listOf(seq)
+        )
+
+        var openedFolderName = ""
+        composeRule.setContent {
+            LumenReelTheme {
+                var galleryFolder by remember { mutableStateOf<com.example.data.model.ProductionFolder?>(null) }
+                androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    ProjectFolderManagerDialog(
+                        project = proj,
+                        onDismiss = {},
+                        onCreateFolder = { _, _, _ -> },
+                        onUpdateFolderNotes = { _, _ -> },
+                        onDeleteFolder = {},
+                        onAssignSequenceToFolder = { _, _ -> },
+                        onRemoveSequenceFromFolder = { _, _ -> },
+                        onOpenWorkspaceTab = { _, _, _ -> },
+                        onOpenScriptEditor = {},
+                        onOpenFolderGallery = { f ->
+                            openedFolderName = f.name
+                            galleryFolder = f
+                        }
+                    )
+                    galleryFolder?.let { activeFolder ->
+                        StoryboardFolderGalleryDialog(
+                            project = proj,
+                            initialFolder = activeFolder,
+                            generatingFrameId = null,
+                            onDismiss = { galleryFolder = null },
+                            onGenerateImage = { _, _ -> }
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("pm_open_gallery_${visualFolder.id}").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals(visualFolder.name, openedFolderName)
+
+        composeRule.onNodeWithTag("storyboard_folder_gallery_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("storyboard_folder_gallery_grid").assertIsDisplayed()
+        composeRule.onNodeWithTag("gallery_grid_item_sb_g1").assertIsDisplayed()
+        composeRule.onNodeWithTag("storyboard_folder_gallery_grid")
+            .performScrollToNode(hasTestTag("gallery_grid_item_sb_g2"))
+        composeRule.onNodeWithTag("gallery_grid_item_sb_g2").assertIsDisplayed()
+
+        // Filter to only generated -> keeps sb_g1
+        composeRule.onNodeWithTag("gallery_filter_generated").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("gallery_grid_item_sb_g1").assertIsDisplayed()
+
+        // Tap grid item -> opens lightbox
+        composeRule.onNodeWithTag("gallery_grid_item_sb_g1").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("gallery_lightbox_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("gallery_lightbox_close").performClick()
+        composeRule.waitForIdle()
+        imgFile.delete()
+    }
+
+    @Test
+    fun `StoryboardTabView toggles between detailed list and folder-scoped grid gallery`() {
+        val folderList = ProjectTemplateCatalog.defaultFoldersFor("short_film")
+        val seq = ProductionSequence(
+            id = "seq_tab_gal",
+            projectId = "proj_tab_gal",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Secuencia Grid",
+            storyboardFrames = listOf(
+                StoryboardCard(
+                    id = "sb_t1",
+                    title = "Plano Grid 1",
+                    shotRef = "Plano 01",
+                    visualPrompt = "Wide cinema establishing shot"
+                )
+            )
+        )
+        val proj = ProductionProject(
+            id = "proj_tab_gal",
+            ownerId = LOCAL_GUEST_UID,
+            title = "Grid Film",
+            productionFolders = folderList,
+            sequences = listOf(seq)
+        )
+
+        composeRule.setContent {
+            LumenReelTheme {
+                StoryboardTabView(
+                    sequence = seq,
+                    generatingFrameId = null,
+                    onGenerateImage = {},
+                    project = proj
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("storyboard_view_list").assertIsDisplayed()
+        composeRule.onNodeWithTag("storyboard_view_grid").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("storyboard_folder_gallery_grid").assertIsDisplayed()
+        composeRule.onNodeWithTag("gallery_grid_item_sb_t1").assertIsDisplayed()
+    }
+
+    @Test
+    fun `AuthRepository session prefs and AccountDialog display persistent Google session and resync`() {
+        val prefs = context.getSharedPreferences("lumenreel_session_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("last_uid", "uid_persistent_1")
+            .putString("last_email", "elena@lumenreel.com")
+            .putString("last_display_name", "Elena Director")
+            .putLong("last_synced_at", 1_700_000_000_000L)
+            .putBoolean("explicitly_signed_out", false)
+            .commit()
+
+        val repo = StudioRepository(databaseId = "unused", localStore = LocalStudioStore(context, testDispatcher))
+        val authRepo = AuthRepository(repo)
+        val snap = authRepo.getSessionSnapshot(context)
+        assertTrue(snap.hasRememberedAccount)
+        assertEquals("elena@lumenreel.com", snap.email)
+
+        var resyncClicked = false
+        composeRule.setContent {
+            LumenReelTheme {
+                AccountDialog(
+                    user = null,
+                    persistedSession = snap,
+                    onResyncGoogleSession = { resyncClicked = true },
+                    onDismiss = {},
+                    onSignOut = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("account_persistence_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("account_resync_button").performScrollTo().performClick()
+        assertTrue(resyncClicked)
+
+        authRepo.markExplicitSignOut(context)
+        val afterSignOut = authRepo.getSessionSnapshot(context)
+        assertFalse(afterSignOut.hasRememberedAccount)
+        assertTrue(afterSignOut.explicitlySignedOut)
     }
 }
 

@@ -29,6 +29,23 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 private const val TAG = "AuthRepository"
+private const val SESSION_PREFS_NAME = "lumenreel_session_prefs"
+private const val KEY_UID = "last_uid"
+private const val KEY_EMAIL = "last_email"
+private const val KEY_DISPLAY_NAME = "last_display_name"
+private const val KEY_LAST_SYNCED = "last_synced_at"
+private const val KEY_EXPLICIT_SIGN_OUT = "explicitly_signed_out"
+
+data class PersistedAccountSession(
+    val uid: String = "",
+    val email: String = "",
+    val displayName: String = "",
+    val lastSyncedAtMillis: Long = 0L,
+    val explicitlySignedOut: Boolean = false
+) {
+    val hasRememberedAccount: Boolean
+        get() = uid.isNotBlank() && !explicitlySignedOut
+}
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -38,8 +55,75 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 class AuthRepository(private val studioRepository: StudioRepository) {
 
-    suspend fun attemptAutoSignIn(context: Context): FirebaseUser? {
-        Firebase.auth.currentUser?.let { return it }
+    fun getSessionSnapshot(context: Context): PersistedAccountSession {
+        val prefs = context.applicationContext.getSharedPreferences(SESSION_PREFS_NAME, Context.MODE_PRIVATE)
+        return PersistedAccountSession(
+            uid = prefs.getString(KEY_UID, "").orEmpty(),
+            email = prefs.getString(KEY_EMAIL, "").orEmpty(),
+            displayName = prefs.getString(KEY_DISPLAY_NAME, "").orEmpty(),
+            lastSyncedAtMillis = prefs.getLong(KEY_LAST_SYNCED, 0L),
+            explicitlySignedOut = prefs.getBoolean(KEY_EXPLICIT_SIGN_OUT, false)
+        )
+    }
+
+    fun recordSignedInSession(context: Context, user: FirebaseUser): PersistedAccountSession {
+        val now = System.currentTimeMillis()
+        val email = user.email.orEmpty().ifBlank { "${user.uid}@lumenreel.local" }
+        val displayName = user.displayName.orEmpty().ifBlank { "Director LumenReel" }
+        val prefs = context.applicationContext.getSharedPreferences(SESSION_PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_UID, user.uid)
+            .putString(KEY_EMAIL, email)
+            .putString(KEY_DISPLAY_NAME, displayName)
+            .putLong(KEY_LAST_SYNCED, now)
+            .putBoolean(KEY_EXPLICIT_SIGN_OUT, false)
+            .commit()
+        return PersistedAccountSession(
+            uid = user.uid,
+            email = email,
+            displayName = displayName,
+            lastSyncedAtMillis = now,
+            explicitlySignedOut = false
+        )
+    }
+
+    fun markExplicitSignOut(context: Context) {
+        val prefs = context.applicationContext.getSharedPreferences(SESSION_PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove(KEY_UID)
+            .remove(KEY_EMAIL)
+            .remove(KEY_DISPLAY_NAME)
+            .putLong(KEY_LAST_SYNCED, 0L)
+            .putBoolean(KEY_EXPLICIT_SIGN_OUT, true)
+            .commit()
+    }
+
+    suspend fun attemptAutoSignIn(
+        context: Context,
+        ignoreExplicitSignOut: Boolean = false
+    ): FirebaseUser? {
+        // 1) Reuse active cached Firebase Auth session across emulator restarts
+        Firebase.auth.currentUser?.let { activeUser ->
+            runCatching { activeUser.getIdToken(false).await() }
+            recordSignedInSession(context, activeUser)
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    studioRepository.ensureUserProfile(
+                        userId = activeUser.uid,
+                        displayName = activeUser.displayName ?: "Director LumenReel",
+                        email = activeUser.email ?: "${activeUser.uid}@lumenreel.local"
+                    )
+                }
+            }
+            return activeUser
+        }
+
+        // Respect manual sign-out unless explicitly requested to resync
+        val snapshot = getSessionSnapshot(context)
+        if (snapshot.explicitlySignedOut && !ignoreExplicitSignOut) {
+            return null
+        }
+
         val clientId = try {
             context.getString(R.string.default_web_client_id)
         } catch (e: Exception) {
@@ -49,8 +133,37 @@ class AuthRepository(private val studioRepository: StudioRepository) {
 
         val activityContext: Context = context.findActivity() ?: context
         val credentialManager = CredentialManager.create(activityContext)
+
+        // 2) Try already-authorized Google account on device/emulator (fast path across restarts)
+        val authorizedResult = trySilentGoogleIdSignIn(
+            context = context,
+            activityContext = activityContext,
+            credentialManager = credentialManager,
+            clientId = clientId,
+            filterByAuthorizedAccounts = true
+        )
+        if (authorizedResult != null) return authorizedResult
+
+        // 3) Reinstall recovery path: if app authorization was wiped on reinstall, auto-select
+        // the emulator's active Google account with filterByAuthorizedAccounts = false
+        return trySilentGoogleIdSignIn(
+            context = context,
+            activityContext = activityContext,
+            credentialManager = credentialManager,
+            clientId = clientId,
+            filterByAuthorizedAccounts = false
+        )
+    }
+
+    private suspend fun trySilentGoogleIdSignIn(
+        context: Context,
+        activityContext: Context,
+        credentialManager: CredentialManager,
+        clientId: String,
+        filterByAuthorizedAccounts: Boolean
+    ): FirebaseUser? {
         val googleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(true)
+            .setFilterByAuthorizedAccounts(filterByAuthorizedAccounts)
             .setServerClientId(clientId)
             .setAutoSelectEnabled(true)
             .build()
@@ -68,6 +181,7 @@ class AuthRepository(private val studioRepository: StudioRepository) {
                 val authResult = Firebase.auth.signInWithCredential(firebaseCredential).await()
                 val user = authResult.user
                 if (user != null) {
+                    recordSignedInSession(context, user)
                     withContext(Dispatchers.IO) {
                         studioRepository.ensureUserProfile(
                             userId = user.uid,
@@ -83,12 +197,52 @@ class AuthRepository(private val studioRepository: StudioRepository) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: NoCredentialException) {
-            Log.d(TAG, "No cached authorized Google account for silent sign-in.")
+            Log.d(
+                TAG,
+                "No Google credential returned (filterByAuthorizedAccounts=$filterByAuthorizedAccounts)."
+            )
+            null
+        } catch (e: GetCredentialCancellationException) {
+            Log.d(
+                TAG,
+                "Silent Google ID prompt dismissed (filterByAuthorizedAccounts=$filterByAuthorizedAccounts)."
+            )
             null
         } catch (e: Exception) {
-            Log.w(TAG, "Silent auto sign-in did not complete (${e.javaClass.simpleName}): ${e.message}", e)
+            Log.w(
+                TAG,
+                "Silent auto sign-in did not complete (filter=$filterByAuthorizedAccounts, ${e.javaClass.simpleName}): ${e.message}",
+                e
+            )
             null
         }
+    }
+
+    suspend fun resyncActiveAccount(context: Context): Result<FirebaseUser> {
+        val current = Firebase.auth.currentUser
+        if (current != null) {
+            return try {
+                runCatching { current.getIdToken(true).await() }
+                recordSignedInSession(context, current)
+                withContext(Dispatchers.IO) {
+                    studioRepository.ensureUserProfile(
+                        userId = current.uid,
+                        displayName = current.displayName ?: "Director LumenReel",
+                        email = current.email ?: "${current.uid}@lumenreel.local"
+                    )
+                }.getOrThrow()
+                Result.success(current)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+        val restored = attemptAutoSignIn(context, ignoreExplicitSignOut = true)
+        if (restored != null) {
+            return Result.success(restored)
+        }
+        return signInInteractive(context)
     }
 
     suspend fun signInInteractive(context: Context): Result<FirebaseUser> {
@@ -129,6 +283,7 @@ class AuthRepository(private val studioRepository: StudioRepository) {
                     IllegalStateException("Firebase Auth no devolvió un usuario activo.")
                 )
 
+            recordSignedInSession(context, user)
             withContext(Dispatchers.IO) {
                 studioRepository.ensureUserProfile(
                     userId = user.uid,
@@ -188,6 +343,7 @@ class AuthRepository(private val studioRepository: StudioRepository) {
         withContext(NonCancellable) {
             val requestContext = context.findActivity() ?: context
             try {
+                markExplicitSignOut(context)
                 studioRepository.clearSessionCache()
                 Firebase.auth.signOut()
                 CredentialManager.create(requestContext)

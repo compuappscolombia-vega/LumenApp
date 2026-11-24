@@ -358,6 +358,65 @@ object ProjectTemplateCatalog {
         if (folder.id == folderId) folder.copy(notes = notes.trim().take(2000)) else folder
     }
 
+    fun assignSequenceToFolder(
+        existing: List<ProductionFolder>,
+        folderId: String,
+        sequenceId: String
+    ): List<ProductionFolder> {
+        val cleanSeq = sequenceId.trim()
+        if (cleanSeq.isEmpty()) return existing
+        return existing.map { folder ->
+            if (folder.id == folderId && !folder.linkedSequenceIds.contains(cleanSeq)) {
+                folder.copy(linkedSequenceIds = (folder.linkedSequenceIds + cleanSeq).take(50))
+            } else folder
+        }
+    }
+
+    fun removeSequenceFromFolder(
+        existing: List<ProductionFolder>,
+        folderId: String,
+        sequenceId: String
+    ): List<ProductionFolder> = existing.map { folder ->
+        if (folder.id == folderId) {
+            folder.copy(linkedSequenceIds = folder.linkedSequenceIds.filterNot { it == sequenceId })
+        } else folder
+    }
+
+    fun deleteFolder(
+        existing: List<ProductionFolder>,
+        folderId: String
+    ): List<ProductionFolder> {
+        if (existing.size <= 1) return existing
+        return existing.filterNot { it.id == folderId }
+    }
+
+    data class FolderAssetsSummary(
+        val linkedSequences: List<com.example.data.model.ProductionSequence>,
+        val sceneCount: Int,
+        val storyboardFramesCount: Int
+    )
+
+    fun resolveFolderAssetsSummary(
+        folder: ProductionFolder,
+        project: com.example.data.model.ProductionProject
+    ): FolderAssetsSummary {
+        val explicitlyLinked = if (folder.linkedSequenceIds.isNotEmpty()) {
+            project.sequences.filter { it.id in folder.linkedSequenceIds }
+        } else {
+            emptyList()
+        }
+        val effective = when {
+            explicitlyLinked.isNotEmpty() -> explicitlyLinked
+            folder.category.lowercase() in listOf("script", "visual", "field") -> project.sequences
+            else -> emptyList()
+        }
+        return FolderAssetsSummary(
+            linkedSequences = effective,
+            sceneCount = effective.sumOf { it.screenplay.size },
+            storyboardFramesCount = effective.sumOf { it.storyboardFrames.size }
+        )
+    }
+
     fun resolveWorkspaceTab(folder: ProductionFolder): WorkspaceTab = when (folder.targetTab.lowercase()) {
         "vision" -> WorkspaceTab.VISION
         "shots" -> WorkspaceTab.SHOTS
@@ -371,5 +430,16 @@ object ProjectTemplateCatalog {
         "schedule", "sound" -> "shots"
         "visual", "field" -> "storyboard"
         else -> "screenplay"
+    }
+
+    fun categoryDisplayLabel(category: String): String = when (category.lowercase()) {
+        "script" -> "Guion / Scripts"
+        "visual" -> "Storyboard / Arte"
+        "bible" -> "Biblia y Dirección"
+        "schedule" -> "Plan de Rodaje"
+        "sound" -> "Sonido Atmos"
+        "vfx" -> "VFX / SFX"
+        "field" -> "Archivo de Campo"
+        else -> "Producción"
     }
 }

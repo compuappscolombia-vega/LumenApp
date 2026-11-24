@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,15 +20,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.MovieCreation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,9 +60,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.R
+import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.StoryboardCard
+import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
+import com.example.ui.components.FolderStoryboardGalleryItem
+import com.example.ui.components.StoryboardFolderGalleryGrid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -65,12 +76,16 @@ fun StoryboardTabView(
     sequence: ProductionSequence,
     generatingFrameId: String?,
     onGenerateImage: (StoryboardCard) -> Unit,
+    project: ProductionProject? = null,
+    onGenerateFolderFrame: ((ProductionSequence, StoryboardCard) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var copiedBanner by remember { mutableStateOf<String?>(null) }
     var lightboxFrame by remember { mutableStateOf<StoryboardCard?>(null) }
+    var isGridView by remember { mutableStateOf(false) }
+    var selectedFolderId by remember(project?.id) { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxSize()) {
         if (copiedBanner != null) {
@@ -87,39 +102,159 @@ fun StoryboardTabView(
             }
         }
 
-        LazyColumn(
+        Surface(
+            color = colors.surface,
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxWidth()
+                .border(1.dp, colors.outline)
         ) {
-            if (sequence.storyboardFrames.isEmpty()) {
-                item {
-                    Text(
-                        text = "No hay tarjetas de storyboard generadas todavía.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceVariant.copy(alpha = 0.78f)
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = !isGridView,
+                        onClick = { isGridView = false },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Rounded.ViewList, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Lista detallada", style = MaterialTheme.typography.labelMedium) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = colors.primaryContainer,
+                            selectedLabelColor = colors.onPrimaryContainer
+                        ),
+                        modifier = Modifier.testTag("storyboard_view_list")
+                    )
+                    FilterChip(
+                        selected = isGridView,
+                        onClick = { isGridView = true },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.GridView, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                        label = { Text("Galería Grid", style = MaterialTheme.typography.labelMedium) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = colors.primaryContainer,
+                            selectedLabelColor = colors.onPrimaryContainer
+                        ),
+                        modifier = Modifier.testTag("storyboard_view_grid")
                     )
                 }
-            } else {
-                itemsIndexed(sequence.storyboardFrames, key = { idx, f -> f.id.ifBlank { "sb_$idx" } }) { idx, frame ->
-                    StoryboardFrameItem(
-                        index = idx,
-                        frame = frame,
-                        sequenceAspectRatio = sequence.aspectRatio,
-                        isGenerating = generatingFrameId == frame.id,
-                        onGenerate = { onGenerateImage(frame) },
-                        onOpenLightbox = { lightboxFrame = frame },
-                        onCopyVisual = {
-                            copyToClipboard(context, frame.visualPrompt)
-                            copiedBanner = "Prompt visual de \"${frame.title}\" copiado."
-                        },
-                        onCopyMotion = {
-                            copyToClipboard(context, frame.veoMotionPrompt)
-                            copiedBanner = "Prompt de movimiento de cámara copiado."
+
+                if (isGridView && project != null) {
+                    val folders = remember(project.productionFolders, project.templateId) {
+                        project.productionFolders.ifEmpty { ProjectTemplateCatalog.defaultFoldersFor(project.templateId) }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedFolderId == null,
+                            onClick = { selectedFolderId = null },
+                            label = { Text("Secuencia actual", style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.testTag("storyboard_grid_scope_sequence")
+                        )
+                        folders.forEach { folder ->
+                            FilterChip(
+                                selected = selectedFolderId == folder.id,
+                                onClick = { selectedFolderId = folder.id },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(14.dp))
+                                },
+                                label = { Text(folder.name, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.testTag("storyboard_grid_folder_${folder.id}")
+                            )
                         }
-                    )
+                    }
+                }
+            }
+        }
+
+        if (isGridView) {
+            val gridItems = remember(sequence, project, selectedFolderId) {
+                val activeFolder = if (project != null && selectedFolderId != null) {
+                    val folders = project.productionFolders.ifEmpty {
+                        ProjectTemplateCatalog.defaultFoldersFor(project.templateId)
+                    }
+                    folders.firstOrNull { it.id == selectedFolderId }
+                } else null
+
+                if (project != null && activeFolder != null) {
+                    val summary = ProjectTemplateCatalog.resolveFolderAssetsSummary(activeFolder, project)
+                    summary.linkedSequences.flatMap { seq ->
+                        seq.storyboardFrames.map { card ->
+                            FolderStoryboardGalleryItem(
+                                sequence = seq,
+                                frame = card,
+                                folderName = activeFolder.name
+                            )
+                        }
+                    }
+                } else {
+                    sequence.storyboardFrames.map { card ->
+                        FolderStoryboardGalleryItem(
+                            sequence = sequence,
+                            frame = card,
+                            folderName = sequence.title
+                        )
+                    }
+                }
+            }
+
+            StoryboardFolderGalleryGrid(
+                items = gridItems,
+                generatingFrameId = generatingFrameId,
+                onGenerateImage = { seq, card ->
+                    onGenerateFolderFrame?.invoke(seq, card) ?: onGenerateImage(card)
+                },
+                onSelectFramePreview = { entry -> lightboxFrame = entry.frame },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(12.dp)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (sequence.storyboardFrames.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No hay tarjetas de storyboard generadas todavía.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant.copy(alpha = 0.78f)
+                        )
+                    }
+                } else {
+                    itemsIndexed(sequence.storyboardFrames, key = { idx, f -> f.id.ifBlank { "sb_$idx" } }) { idx, frame ->
+                        StoryboardFrameItem(
+                            index = idx,
+                            frame = frame,
+                            sequenceAspectRatio = sequence.aspectRatio,
+                            isGenerating = generatingFrameId == frame.id,
+                            onGenerate = { onGenerateImage(frame) },
+                            onOpenLightbox = { lightboxFrame = frame },
+                            onCopyVisual = {
+                                copyToClipboard(context, frame.visualPrompt)
+                                copiedBanner = "Prompt visual de \"${frame.title}\" copiado."
+                            },
+                            onCopyMotion = {
+                                copyToClipboard(context, frame.veoMotionPrompt)
+                                copiedBanner = "Prompt de movimiento de cámara copiado."
+                            }
+                        )
+                    }
                 }
             }
         }

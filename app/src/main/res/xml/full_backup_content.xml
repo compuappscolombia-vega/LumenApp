@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="sharedpref" path="lumenreel_session_prefs.xml" />
+    <include domain="sharedpref" path="lumenreel_studio_prefs.xml" />
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="lumenreel_local_studio_v1.json" />
+</full-backup-content>

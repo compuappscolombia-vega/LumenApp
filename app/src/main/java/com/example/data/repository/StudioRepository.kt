@@ -18,12 +18,14 @@ import com.example.data.model.ProductionMilestoneItem
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.ShotSpec
 import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.StudioProjectDoc
+import com.example.data.model.SystemErrorEntry
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.UserStudioConfig
 import com.example.data.model.VfxBreakdown
@@ -139,6 +141,40 @@ class StudioRepository(
 
     suspend fun saveWorkspaceDrafts(userId: String, draft: LocalWorkspaceDraftSnapshot): Result<Unit> =
         localStore?.saveWorkspaceDraftSnapshot(userId, draft) ?: Result.success(Unit)
+
+    fun observeSystemErrors(): Flow<List<SystemErrorEntry>> =
+        localStore?.observeSystemErrors() ?: flowOf(emptyList())
+
+    suspend fun recordSystemError(entry: SystemErrorEntry): Result<SystemErrorEntry> =
+        localStore?.recordSystemError(entry) ?: Result.success(entry)
+
+    suspend fun markSystemErrorRepaired(errorId: String, repairNote: String): Result<Unit> =
+        localStore?.markSystemErrorRepaired(errorId, repairNote) ?: Result.success(Unit)
+
+    suspend fun markAllOpenErrorsRepaired(repairNote: String): Result<Int> =
+        localStore?.markAllOpenErrorsRepaired(repairNote) ?: Result.success(0)
+
+    suspend fun clearRepairedSystemErrors(): Result<Unit> =
+        localStore?.clearRepairedSystemErrors() ?: Result.success(Unit)
+
+    suspend fun clearBrokenStoryboardPaths(frameIds: Set<String>): Result<Unit> {
+        if (frameIds.isEmpty()) return Result.success(Unit)
+        localStore?.clearBrokenStoryboardPaths(frameIds)
+        _firestoreSequenceCache.update { cache ->
+            cache.mapValues { (_, seqs) ->
+                seqs.map { seq ->
+                    seq.copy(
+                        storyboardFrames = seq.storyboardFrames.map { frame ->
+                            if (frame.id in frameIds) frame.copy(localImagePath = null) else frame
+                        }
+                    )
+                }
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    fun hasSignedInFirebaseUser(): Boolean = runCatching { auth.currentUser != null }.getOrDefault(false)
 
     fun observeProjects(userId: String): Flow<List<ProductionProject>> {
         if (isLocalMode(userId)) {
@@ -282,6 +318,21 @@ class StudioRepository(
         }
     }
 
+    fun observeScriptVersions(userId: String, projectId: String): Flow<List<ScriptVersion>> {
+        if (projectId.isBlank()) return flowOf(emptyList())
+        if (isLocalMode(userId)) {
+            return localStore!!.observeScriptVersions(projectId)
+        }
+        return db.collection("users").document(userId)
+            .collection("projects").document(projectId)
+            .collection("script_versions")
+            .snapshots(MetadataChanges.INCLUDE)
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { doc -> parseScriptVersionDocument(doc) }
+                    .sortedWith(compareByDescending<ScriptVersion> { it.versionNumber }.thenByDescending { it.createdAtMillis })
+            }
+    }
+
     fun observeAgentMessages(userId: String, projectId: String): Flow<List<AgentMessage>> {
         if (isLocalMode(userId)) {
             return localStore!!.observeAgentMessages(projectId)
@@ -347,6 +398,30 @@ class StudioRepository(
             milestoneType = doc.getString("milestoneType") ?: CalendarMilestoneType.SHOOTING_DAY.wireValue,
             sequenceId = doc.getString("sequenceId"),
             completed = doc.getBoolean("completed") ?: false,
+            createdAtMillis = (createdTs ?: Timestamp.now()).toDate().time,
+            updatedAtMillis = (updatedTs ?: createdTs ?: Timestamp.now()).toDate().time
+        )
+    }
+
+    private fun parseScriptVersionDocument(doc: DocumentSnapshot): ScriptVersion? {
+        if (!doc.exists()) return null
+        val data = doc.data ?: return null
+        val rawScenes = data["scenes"] as? List<*> ?: emptyList<Any?>()
+        val parsedScenes = rawScenes.mapNotNull { (it as? Map<*, *>)?.let(ScreenplayScene::fromMap) }
+        val createdTs = doc.getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        val updatedTs = doc.getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        return ScriptVersion(
+            id = doc.id,
+            projectId = data["projectId"] as? String ?: "",
+            ownerId = data["ownerId"] as? String ?: "",
+            sequenceId = data["sequenceId"] as? String ?: "",
+            sequenceTitle = data["sequenceTitle"] as? String ?: "",
+            versionNumber = (data["versionNumber"] as? Number)?.toInt() ?: 1,
+            versionLabel = data["versionLabel"] as? String ?: "v1",
+            changeNote = data["changeNote"] as? String ?: "",
+            sceneCount = (data["sceneCount"] as? Number)?.toInt() ?: parsedScenes.size,
+            wordCount = (data["wordCount"] as? Number)?.toInt() ?: ScriptVersion.computeWordCount(parsedScenes),
+            scenes = parsedScenes,
             createdAtMillis = (createdTs ?: Timestamp.now()).toDate().time,
             updatedAtMillis = (updatedTs ?: createdTs ?: Timestamp.now()).toDate().time
         )
@@ -842,8 +917,136 @@ class StudioRepository(
             for (assetDoc in assetDocs.documents) {
                 assetDoc.reference.delete().await()
             }
+            val scriptVerDocs = projRef.collection("script_versions").get().await()
+            for (verDoc in scriptVerDocs.documents) {
+                verDoc.reference.delete().await()
+            }
             projRef.delete().await()
             _firestoreSequenceCache.update { it - cacheKey(userId, projectId) }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveScriptVersion(
+        userId: String,
+        projectId: String,
+        sequence: ProductionSequence,
+        versionLabel: String,
+        changeNote: String,
+        nextVersionNumber: Int
+    ): Result<ScriptVersion> {
+        if (isLocalMode(userId)) {
+            return localStore!!.saveScriptVersion(
+                userId = userId,
+                projectId = projectId,
+                sequence = sequence,
+                versionLabel = versionLabel,
+                changeNote = changeNote
+            )
+        }
+        val verId = newSafeDocId("sver")
+        val path = "users/$userId/projects/$projectId/script_versions/$verId"
+        return try {
+            requireUserId(userId)
+            val safeNum = nextVersionNumber.coerceIn(1, 10000)
+            val cleanSeqId = sequence.id.trim().take(128)
+            require(cleanSeqId.isNotEmpty()) { "La secuencia debe existir antes de guardar una versión." }
+            val cleanSeqTitle = sequence.title.trim().ifBlank { "Secuencia" }.take(200)
+            val cleanLabel = versionLabel.trim().ifBlank { "v$safeNum" }.take(80)
+            val cleanNote = changeNote.trim().take(400)
+            val safeScenes = sequence.screenplay.take(200)
+            val wordCount = ScriptVersion.computeWordCount(safeScenes).coerceIn(0, 500000)
+            val sceneCount = safeScenes.size.coerceIn(0, 500)
+
+            val payload = mapOf<String, Any>(
+                "projectId" to projectId,
+                "ownerId" to userId,
+                "sequenceId" to cleanSeqId,
+                "sequenceTitle" to cleanSeqTitle,
+                "versionNumber" to safeNum.toLong(),
+                "versionLabel" to cleanLabel,
+                "changeNote" to cleanNote,
+                "sceneCount" to sceneCount.toLong(),
+                "wordCount" to wordCount.toLong(),
+                "scenes" to safeScenes.map { it.toMap() },
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            db.document(path).set(payload).await()
+            val now = System.currentTimeMillis()
+            Result.success(
+                ScriptVersion(
+                    id = verId,
+                    projectId = projectId,
+                    ownerId = userId,
+                    sequenceId = cleanSeqId,
+                    sequenceTitle = cleanSeqTitle,
+                    versionNumber = safeNum,
+                    versionLabel = cleanLabel,
+                    changeNote = cleanNote,
+                    sceneCount = sceneCount,
+                    wordCount = wordCount,
+                    scenes = safeScenes,
+                    createdAtMillis = now,
+                    updatedAtMillis = now
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateScriptVersionMetadata(
+        userId: String,
+        projectId: String,
+        versionId: String,
+        versionLabel: String,
+        changeNote: String
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.updateScriptVersionMetadata(versionId, versionLabel, changeNote)
+        }
+        val path = "users/$userId/projects/$projectId/script_versions/$versionId"
+        return try {
+            requireUserId(userId)
+            val cleanLabel = versionLabel.trim().take(80)
+            require(cleanLabel.isNotEmpty()) { "La etiqueta de versión es obligatoria." }
+            db.document(path).update(
+                mapOf(
+                    "versionLabel" to cleanLabel,
+                    "changeNote" to changeNote.trim().take(400),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteScriptVersion(
+        userId: String,
+        projectId: String,
+        versionId: String
+    ): Result<Unit> {
+        if (isLocalMode(userId)) {
+            return localStore!!.deleteScriptVersion(versionId)
+        }
+        val path = "users/$userId/projects/$projectId/script_versions/$versionId"
+        return try {
+            requireUserId(userId)
+            db.document(path).delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

@@ -25,10 +25,14 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.StoryboardCard
 import com.example.data.model.StudioIntelligenceReport
+import com.example.data.model.SystemErrorEntry
+import com.example.data.model.SystemErrorSource
+import com.example.data.model.SystemErrorStatus
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.UserStudioConfig
 import com.example.data.model.WorkspaceTab
@@ -43,6 +47,7 @@ import com.example.data.util.PdfExporter
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.StudioLogic
+import com.example.data.util.SystemErrorDiagnostics
 import com.example.data.util.friendlyFirestoreMessage
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -101,9 +106,16 @@ data class StudioUiState(
     val showCalendarDialog: Boolean = false,
     val milestones: List<ProductionMilestoneItem> = emptyList(),
     val studioConfig: UserStudioConfig = UserStudioConfig(),
+    val scriptVersions: List<ScriptVersion> = emptyList(),
+    val activeScriptVersionId: String? = null,
+    val systemErrors: List<SystemErrorEntry> = emptyList(),
+    val lastRepairSummary: String? = null,
     val statusBanner: String? = null,
     val errorBanner: String? = null
-)
+) {
+    val openErrorCount: Int
+        get() = systemErrors.count { it.status == SystemErrorStatus.OPEN }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StudioViewModel(
@@ -145,10 +157,40 @@ class StudioViewModel(
     private val _studioConfig = MutableStateFlow(repository.getCachedUserConfig(currentUserId))
     private val _isDarkMode = MutableStateFlow(_studioConfig.value.isDarkMode)
     private val _showCalendarDialog = MutableStateFlow(false)
+    private val _activeScriptVersionByProject = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val _lastRepairSummary = MutableStateFlow<String?>(null)
     private val _statusBanner = MutableStateFlow<String?>(null)
     private val _errorBanner = MutableStateFlow<String?>(null)
     @Volatile
     private var isSavingConfig = false
+
+    private fun recordError(
+        source: SystemErrorSource,
+        rawMessage: String,
+        exception: Throwable? = null,
+        contextHint: String = "",
+        projectId: String = _selectedProjectId.value
+    ) {
+        val entry = SystemErrorDiagnostics.buildEntry(
+            source = source,
+            rawMessage = rawMessage,
+            exception = exception,
+            contextHint = contextHint,
+            projectId = projectId
+        )
+        viewModelScope.launch {
+            repository.recordSystemError(entry)
+        }
+    }
+
+    fun logSystemError(
+        source: SystemErrorSource,
+        message: String,
+        contextHint: String = "",
+        projectId: String = _selectedProjectId.value
+    ) {
+        recordError(source, message, null, contextHint, projectId)
+    }
 
     init {
         val saved = repository.loadWorkspaceDrafts(currentUserId)
@@ -210,7 +252,9 @@ class StudioViewModel(
                 if (fsErr == null && error is CancellationException) throw error
                 val root = fsErr ?: error
                 Log.w(TAG, "Error observing projects", root)
-                emit(UiState.Error(friendlyFirestoreMessage(root)))
+                val friendly = friendlyFirestoreMessage(root)
+                recordError(SystemErrorSource.FIRESTORE, friendly, root, "observeProjects")
+                emit(UiState.Error(friendly))
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), UiState.Loading)
 
@@ -237,7 +281,9 @@ class StudioViewModel(
                         .firstOrNull()
                     if (fsErr == null && error is CancellationException) throw error
                     Log.w(TAG, "Error observing sequences", fsErr ?: error)
-                    _errorBanner.value = friendlyFirestoreMessage(fsErr ?: error)
+                    val friendly = friendlyFirestoreMessage(fsErr ?: error)
+                    _errorBanner.value = friendly
+                    recordError(SystemErrorSource.FIRESTORE, friendly, fsErr ?: error, "observeSequences", pid)
                     emit(_sequencesByProject.value[pid].orEmpty())
                 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
@@ -295,6 +341,20 @@ class StudioViewModel(
                     emit(emptyMap())
                 }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyMap())
+
+    private val activeScriptVersionsStream: StateFlow<List<ScriptVersion>> =
+        _selectedProjectId.flatMapLatest { pid ->
+            if (pid.isBlank()) flowOf(emptyList())
+            else repository.observeScriptVersions(currentUserId, pid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    Log.w(TAG, "Error observing script versions", fsErr ?: error)
+                    emit(emptyList())
+                }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     private val userProfileStream: StateFlow<UserProfileState?> =
         repository.observeUserProfile(currentUserId)
@@ -359,17 +419,31 @@ class StudioViewModel(
         )
     }
 
+    private val diagnosticsStream = combine(
+        repository.observeSystemErrors(),
+        _lastRepairSummary,
+        activeScriptVersionsStream,
+        _activeScriptVersionByProject
+    ) { errors, repairSummary, scriptVersions, activeVersionMap ->
+        DiagnosticsAndVersions(errors, repairSummary, scriptVersions, activeVersionMap)
+    }
+
     private val extrasStream = combine(
         _studioConfig,
         _isDarkMode,
         activeMilestonesStream,
-        activeStoryboardPathsStream
-    ) { config, isDark, milestones, persistedFrames ->
+        activeStoryboardPathsStream,
+        diagnosticsStream
+    ) { config, isDark, milestones, persistedFrames, diagnostics ->
         StudioExtrasState(
             config = config,
             isDarkMode = isDark,
             milestones = milestones,
-            persistedFramePaths = persistedFrames
+            persistedFramePaths = persistedFrames,
+            scriptVersions = diagnostics.scriptVersions,
+            activeScriptVersionByProject = diagnostics.activeVersionMap,
+            systemErrors = diagnostics.errors,
+            lastRepairSummary = diagnostics.repairSummary
         )
     }
 
@@ -527,6 +601,10 @@ class StudioViewModel(
                         showCalendarDialog = sel.showCalendarDialog,
                         milestones = extras.milestones,
                         studioConfig = extras.config,
+                        scriptVersions = extras.scriptVersions,
+                        activeScriptVersionId = activeProject?.id?.let { extras.activeScriptVersionByProject[it] },
+                        systemErrors = extras.systemErrors,
+                        lastRepairSummary = extras.lastRepairSummary,
                         statusBanner = banners.statusBanner,
                         errorBanner = banners.errorBanner
                     )
@@ -618,7 +696,9 @@ class StudioViewModel(
             try {
                 repository.updateUserStudioConfig(currentUserId, nextConfig)
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "toggleDarkMode")
                     }
             } finally {
                 isSavingConfig = false
@@ -643,7 +723,9 @@ class StudioViewModel(
                         _statusBanner.value = "Configuración y preferencias guardadas."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "updateStudioConfig")
                     }
             } finally {
                 isSavingConfig = false
@@ -679,7 +761,9 @@ class StudioViewModel(
                 ).onSuccess { created ->
                     _statusBanner.value = "Hito «${created.title}» guardado en el calendario."
                 }.onFailure { err ->
-                    _errorBanner.value = friendlyFirestoreMessage(err)
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "addMilestone", projectId)
                 }
             } finally {
                 _isSavingToDb.value = false
@@ -691,7 +775,11 @@ class StudioViewModel(
         viewModelScope.launch {
             _errorBanner.value = null
             repository.toggleMilestoneCompleted(currentUserId, projectId, milestoneId, completed)
-                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+                .onFailure { err ->
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "toggleMilestoneCompleted", projectId)
+                }
         }
     }
 
@@ -700,7 +788,11 @@ class StudioViewModel(
             _errorBanner.value = null
             repository.deleteMilestone(currentUserId, projectId, milestoneId)
                 .onSuccess { _statusBanner.value = "Hito eliminado del calendario." }
-                .onFailure { err -> _errorBanner.value = friendlyFirestoreMessage(err) }
+                .onFailure { err ->
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "deleteMilestone", projectId)
+                }
         }
     }
 
@@ -896,7 +988,9 @@ class StudioViewModel(
                         _statusBanner.value = "Producción \"$title\" creada con ${resolvedFolders.size} carpetas de producción."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "createProject")
                     }
             } finally {
                 _isSavingToDb.value = false
@@ -917,7 +1011,9 @@ class StudioViewModel(
             description = description
         )
         if (nextFolders.size == project.productionFolders.size) {
-            _errorBanner.value = "Ingresa un nombre válido (límite 20 carpetas por producción)."
+            val msg = "Ingresa un nombre válido (límite 20 carpetas por producción)."
+            _errorBanner.value = msg
+            recordError(SystemErrorSource.SYSTEM, msg, null, "addProductionFolder", project.id)
             return
         }
         viewModelScope.launch {
@@ -929,7 +1025,9 @@ class StudioViewModel(
                         _statusBanner.value = "Carpeta \"${nextFolders.last().name}\" añadida a la producción."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "addProductionFolder", project.id)
                     }
             } finally {
                 _isSavingToDb.value = false
@@ -956,7 +1054,9 @@ class StudioViewModel(
                         _statusBanner.value = "Notas de carpeta sincronizadas."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "updateProductionFolderNotes", project.id)
                     }
             } finally {
                 _isSavingToDb.value = false
@@ -964,8 +1064,113 @@ class StudioViewModel(
         }
     }
 
+    fun assignSequenceToFolder(
+        project: ProductionProject,
+        folderId: String,
+        sequenceId: String
+    ) {
+        val nextFolders = ProjectTemplateCatalog.assignSequenceToFolder(
+            existing = project.productionFolders,
+            folderId = folderId,
+            sequenceId = sequenceId
+        )
+        if (nextFolders == project.productionFolders) return
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateProjectFolders(currentUserId, project.id, nextFolders)
+                    .onSuccess {
+                        _statusBanner.value = "Secuencia vinculada a la carpeta cinematográfica."
+                    }
+                    .onFailure { err ->
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "assignSequenceToFolder", project.id)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun removeSequenceFromFolder(
+        project: ProductionProject,
+        folderId: String,
+        sequenceId: String
+    ) {
+        val nextFolders = ProjectTemplateCatalog.removeSequenceFromFolder(
+            existing = project.productionFolders,
+            folderId = folderId,
+            sequenceId = sequenceId
+        )
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateProjectFolders(currentUserId, project.id, nextFolders)
+                    .onSuccess {
+                        _statusBanner.value = "Secuencia desvinculada de la carpeta."
+                    }
+                    .onFailure { err ->
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "removeSequenceFromFolder", project.id)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun deleteProductionFolder(
+        project: ProductionProject,
+        folderId: String
+    ) {
+        if (project.productionFolders.size <= 1) {
+            _errorBanner.value = "Cada proyecto debe conservar al menos una carpeta activa."
+            return
+        }
+        val nextFolders = ProjectTemplateCatalog.deleteFolder(project.productionFolders, folderId)
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateProjectFolders(currentUserId, project.id, nextFolders)
+                    .onSuccess {
+                        _statusBanner.value = "Carpeta eliminada del proyecto."
+                    }
+                    .onFailure { err ->
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "deleteProductionFolder", project.id)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun openFolderInWorkspace(
+        project: ProductionProject,
+        folder: ProductionFolder,
+        sequenceIdOverride: String? = null,
+        targetTabOverride: WorkspaceTab? = null
+    ) {
+        _selectedProjectId.value = project.id
+        val resolvedSeqId = sequenceIdOverride?.takeIf { it.isNotBlank() }
+            ?: folder.linkedSequenceIds.firstOrNull { id -> project.sequences.any { it.id == id } }
+            ?: project.sequences.firstOrNull()?.id.orEmpty()
+        _selectedSequenceId.value = resolvedSeqId
+        _activeTab.value = targetTabOverride ?: ProjectTemplateCatalog.resolveWorkspaceTab(folder)
+        _showDashboard.value = false
+        _showMetricsDashboard.value = false
+        persistWorkspaceState()
+    }
+
     fun openProductionFolderTab(folder: ProductionFolder) {
         _activeTab.value = ProjectTemplateCatalog.resolveWorkspaceTab(folder)
+        persistWorkspaceState()
     }
 
     fun deleteProject(projectId: String) {
@@ -981,7 +1186,9 @@ class StudioViewModel(
                         _statusBanner.value = "Producción eliminada."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = friendlyFirestoreMessage(err)
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "deleteProject", projectId)
                     }
             } finally {
                 _isSavingToDb.value = false
@@ -1041,6 +1248,7 @@ class StudioViewModel(
                     val cur = map[projectId]
                     if (cur != null) map + (projectId to cur.copy(ingestError = msg)) else map
                 }
+                recordError(SystemErrorSource.AUDIO, msg, e, "analyzeAudioSource", projectId)
             } finally {
                 _isAnalyzingAudio.value = false
             }
@@ -1071,6 +1279,7 @@ class StudioViewModel(
             val msg = validationErrors.first()
             _errorBanner.value = msg
             updateIngestDraft(project) { it.copy(ingestError = msg) }
+            recordError(SystemErrorSource.SYSTEM, msg, null, "produceSequence.validate", project.id)
             return
         }
 
@@ -1125,6 +1334,7 @@ class StudioViewModel(
                     val msg = friendlyFirestoreMessage(err)
                     _errorBanner.value = msg
                     updateIngestDraft(project) { it.copy(ingestError = msg) }
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "produceSequence.save", project.id)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1133,6 +1343,7 @@ class StudioViewModel(
                 val msg = AgentLogic.formatAiError(e)
                 _errorBanner.value = msg
                 updateIngestDraft(project) { it.copy(ingestError = msg) }
+                recordError(SystemErrorSource.AI, msg, e, "produceSequence.ai", project.id)
             } finally {
                 _isProducing.value = false
             }
@@ -1200,6 +1411,7 @@ class StudioViewModel(
                     val msg = friendlyFirestoreMessage(err)
                     _errorBanner.value = msg
                     updateIngestDraft(project) { it.copy(ingestError = msg) }
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "createManualDraftSequence", project.id)
                 }
             } finally {
                 _isProducing.value = false
@@ -1277,6 +1489,162 @@ class StudioViewModel(
         }
     }
 
+    fun saveScriptVersion(
+        project: ProductionProject,
+        sequence: ProductionSequence,
+        versionLabel: String,
+        changeNote: String
+    ) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                val existingVersions = activeScriptVersionsStream.value
+                    .filter { it.projectId == project.id && it.sequenceId == sequence.id }
+                val nextNum = ((existingVersions.maxOfOrNull { it.versionNumber } ?: 0) + 1)
+                    .coerceIn(1, 10000)
+                repository.saveScriptVersion(
+                    userId = currentUserId,
+                    projectId = project.id,
+                    sequence = sequence,
+                    versionLabel = versionLabel,
+                    changeNote = changeNote,
+                    nextVersionNumber = nextNum
+                ).onSuccess { saved ->
+                    _activeScriptVersionByProject.update { it + (project.id to saved.id) }
+                    _statusBanner.value = "Versión de guion «${saved.versionLabel}» (#${saved.versionNumber}) guardada en Firestore."
+                }.onFailure { err ->
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "saveScriptVersion", project.id)
+                }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun switchScriptVersion(
+        project: ProductionProject,
+        activeSequence: ProductionSequence?,
+        version: ScriptVersion
+    ) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                val targetSeq = project.sequences.firstOrNull { it.id == version.sequenceId }
+                    ?: activeSequence
+                if (targetSeq != null && targetSeq.versionStatus == SequenceVersionStatus.DRAFT) {
+                    val updated = targetSeq.copy(screenplay = version.scenes)
+                    repository.updateDraftSequence(currentUserId, project.id, updated)
+                        .onSuccess {
+                            _selectedProjectId.value = project.id
+                            _selectedSequenceId.value = updated.id
+                            _activeTab.value = WorkspaceTab.SCREENPLAY
+                            _activeScriptVersionByProject.update { it + (project.id to version.id) }
+                            persistWorkspaceState()
+                            _statusBanner.value = "Guion cambiado a «${version.versionLabel}» en «${updated.title}»."
+                        }
+                        .onFailure { err ->
+                            val msg = friendlyFirestoreMessage(err)
+                            _errorBanner.value = msg
+                            recordError(SystemErrorSource.FIRESTORE, msg, err, "switchScriptVersion", project.id)
+                        }
+                } else {
+                    val baseTitle = (targetSeq?.title ?: version.sequenceTitle).ifBlank { "Guion" }
+                    val clonedSeq = (targetSeq ?: ProductionSequence(
+                        projectId = project.id,
+                        ownerId = currentUserId,
+                        sourceType = project.defaultSourceType,
+                        directorStyle = project.genreStyle,
+                        aspectRatio = _studioConfig.value.defaultAspectRatio
+                    )).copy(
+                        id = "",
+                        title = "${baseTitle.take(140)} (${version.versionLabel.take(30)})",
+                        versionStatus = SequenceVersionStatus.DRAFT,
+                        screenplay = version.scenes,
+                        sequenceRating = null,
+                        createdAtMillis = 0L,
+                        updatedAtMillis = 0L
+                    )
+                    repository.saveProducedSequence(
+                        userId = currentUserId,
+                        projectId = project.id,
+                        sequence = clonedSeq,
+                        nextContinuityBible = project.continuityBible,
+                        nextSequencesCount = project.sequences.size + 1
+                    ).onSuccess { savedSeq ->
+                        _selectedProjectId.value = project.id
+                        _selectedSequenceId.value = savedSeq.id
+                        _activeTab.value = WorkspaceTab.SCREENPLAY
+                        _activeScriptVersionByProject.update { it + (project.id to version.id) }
+                        persistWorkspaceState()
+                        _statusBanner.value = "Versión «${version.versionLabel}» cargada en nuevo borrador «${savedSeq.title}»."
+                    }.onFailure { err ->
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "switchScriptVersionClone", project.id)
+                    }
+                }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun updateScriptVersionMetadata(
+        projectId: String,
+        versionId: String,
+        versionLabel: String,
+        changeNote: String
+    ) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.updateScriptVersionMetadata(
+                    userId = currentUserId,
+                    projectId = projectId,
+                    versionId = versionId,
+                    versionLabel = versionLabel,
+                    changeNote = changeNote
+                ).onSuccess {
+                    _statusBanner.value = "Etiqueta de versión actualizada."
+                }.onFailure { err ->
+                    val msg = friendlyFirestoreMessage(err)
+                    _errorBanner.value = msg
+                    recordError(SystemErrorSource.FIRESTORE, msg, err, "updateScriptVersionMetadata", projectId)
+                }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun deleteScriptVersion(projectId: String, versionId: String) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            _errorBanner.value = null
+            try {
+                repository.deleteScriptVersion(currentUserId, projectId, versionId)
+                    .onSuccess {
+                        _activeScriptVersionByProject.update { map ->
+                            if (map[projectId] == versionId) map - projectId else map
+                        }
+                        _statusBanner.value = "Versión de guion eliminada."
+                    }
+                    .onFailure { err ->
+                        val msg = friendlyFirestoreMessage(err)
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.FIRESTORE, msg, err, "deleteScriptVersion", projectId)
+                    }
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
     fun sendAgentMessage(
         project: ProductionProject,
         activeSequence: ProductionSequence?,
@@ -1333,7 +1701,9 @@ class StudioViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Agent chat failed", e)
-                _errorBanner.value = AgentLogic.formatAiError(e)
+                val msg = AgentLogic.formatAiError(e)
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.AI, msg, e, "sendAgentMessage", project.id)
             } finally {
                 _isAgentBusy.value = false
             }
@@ -1427,7 +1797,9 @@ class StudioViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Nano image generation failed", e)
-                _errorBanner.value = AgentLogic.formatAiError(e)
+                val msg = AgentLogic.formatAiError(e)
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.AI, msg, e, "generateStoryboardImage", projectId)
             } finally {
                 _generatingFrameId.value = null
             }
@@ -1485,7 +1857,9 @@ class StudioViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorBanner.value = e.localizedMessage ?: "No se pudo generar la Bitácora PDF."
+                val msg = e.localizedMessage ?: "No se pudo generar la Bitácora PDF."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportSequencePdf", project.id)
             } finally {
                 _isExporting.value = false
             }
@@ -1507,7 +1881,9 @@ class StudioViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorBanner.value = e.localizedMessage ?: "No se pudo preparar el PDF de Guion y Plan."
+                val msg = e.localizedMessage ?: "No se pudo preparar el PDF de Guion y Plan."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportScriptAndSchedulePdf", project.id)
             } finally {
                 _isExporting.value = false
             }
@@ -1529,7 +1905,9 @@ class StudioViewModel(
                         _statusBanner.value = "PDF «$displayName» guardado en el almacenamiento del dispositivo."
                     }
                     .onFailure { err ->
-                        _errorBanner.value = err.localizedMessage ?: "No se pudo guardar el PDF en la ubicación seleccionada."
+                        val msg = err.localizedMessage ?: "No se pudo guardar el PDF en la ubicación seleccionada."
+                        _errorBanner.value = msg
+                        recordError(SystemErrorSource.STORAGE, msg, err, "savePdfToDeviceUri")
                     }
             } finally {
                 _isExporting.value = false
@@ -1551,7 +1929,9 @@ class StudioViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorBanner.value = e.localizedMessage ?: "No se pudo exportar la Biblioteca PDF."
+                val msg = e.localizedMessage ?: "No se pudo exportar la Biblioteca PDF."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportLibraryPdf")
             } finally {
                 _isExporting.value = false
             }
@@ -1571,7 +1951,31 @@ class StudioViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorBanner.value = e.localizedMessage ?: "No se pudo generar el Manual PDF."
+                val msg = e.localizedMessage ?: "No se pudo generar el Manual PDF."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportUserManualPdf")
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun exportUserManualForDeviceSave(
+        context: Context,
+        onReadyForDeviceSave: (File) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isExporting.value = true
+            _errorBanner.value = null
+            try {
+                val file = PdfExporter.exportUserManualPdf(context)
+                onReadyForDeviceSave(file)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val msg = e.localizedMessage ?: "No se pudo preparar el Manual PDF."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportUserManualForDeviceSave")
             } finally {
                 _isExporting.value = false
             }
@@ -1600,7 +2004,110 @@ class StudioViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorBanner.value = e.localizedMessage ?: "No se pudo exportar el guion."
+                val msg = e.localizedMessage ?: "No se pudo exportar el guion."
+                _errorBanner.value = msg
+                recordError(SystemErrorSource.STORAGE, msg, e, "exportScreenplayText")
+            }
+        }
+    }
+
+    fun repairSystemError(errorId: String, checkFilesOnDisk: Boolean = true) {
+        runRepairPipeline(targetErrorId = errorId, checkFilesOnDisk = checkFilesOnDisk)
+    }
+
+    fun runFullSystemRepair(checkFilesOnDisk: Boolean = true) {
+        runRepairPipeline(targetErrorId = null, checkFilesOnDisk = checkFilesOnDisk)
+    }
+
+    private fun runRepairPipeline(targetErrorId: String?, checkFilesOnDisk: Boolean) {
+        viewModelScope.launch {
+            _isSavingToDb.value = true
+            try {
+                val currentProjects = (projectsUiState.value as? UiState.Success)?.data?.projects.orEmpty()
+                val audit = SystemErrorDiagnostics.runHealthAuditAndPlanRepairs(
+                    projects = currentProjects,
+                    selectedProjectId = _selectedProjectId.value,
+                    selectedSequenceId = _selectedSequenceId.value,
+                    config = _studioConfig.value,
+                    hasSignedInUser = repository.hasSignedInFirebaseUser(),
+                    checkFilesOnDisk = checkFilesOnDisk
+                )
+
+                if (audit.sanitizedConfig != _studioConfig.value) {
+                    _studioConfig.value = audit.sanitizedConfig
+                    _isDarkMode.value = audit.sanitizedConfig.isDarkMode
+                    repository.updateUserStudioConfig(currentUserId, audit.sanitizedConfig)
+                }
+                _selectedProjectId.value = audit.sanitizedConfig.lastProjectId
+                _selectedSequenceId.value = audit.sanitizedConfig.lastSequenceId
+
+                for (proj in audit.projectsNeedingDefaultFolders) {
+                    val restoredFolders = ProjectTemplateCatalog.defaultFoldersFor(proj.templateId)
+                    repository.updateProjectFolders(currentUserId, proj.id, restoredFolders)
+                }
+
+                if (audit.brokenFrameIdsToClear.isNotEmpty()) {
+                    val brokenSet = audit.brokenFrameIdsToClear.toSet()
+                    repository.clearBrokenStoryboardPaths(brokenSet)
+                    _localFramePaths.update { map -> map.filterKeys { it !in brokenSet } }
+                }
+
+                _ingestDrafts.update { map ->
+                    map.mapValues { (_, draft) -> draft.copy(ingestError = null, fileError = null) }
+                }
+                _errorBanner.value = null
+                persistWorkspaceState()
+
+                val summaryNote = audit.repairsApplied.take(3).joinToString(" · ")
+                if (targetErrorId != null) {
+                    repository.markSystemErrorRepaired(targetErrorId, summaryNote)
+                } else {
+                    repository.markAllOpenErrorsRepaired(summaryNote)
+                }
+                _lastRepairSummary.value = summaryNote
+                _statusBanner.value = "Reparación aplicada: $summaryNote"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val msg = e.localizedMessage ?: "No se pudo completar la auto-reparación."
+                _errorBanner.value = msg
+            } finally {
+                _isSavingToDb.value = false
+            }
+        }
+    }
+
+    fun markSystemErrorRepaired(
+        errorId: String,
+        note: String = "Marcado como reparado por el usuario."
+    ) {
+        viewModelScope.launch {
+            repository.markSystemErrorRepaired(errorId, note)
+            _statusBanner.value = "Incidencia marcada como reparada."
+        }
+    }
+
+    fun clearRepairedSystemErrors() {
+        viewModelScope.launch {
+            repository.clearRepairedSystemErrors()
+            _statusBanner.value = "Historial de incidencias reparadas limpiado."
+        }
+    }
+
+    fun exportSystemErrorReport(
+        context: Context,
+        errors: List<SystemErrorEntry>,
+        onReadyToShare: (File, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val reportText = SystemErrorDiagnostics.formatDiagnosticReportText(errors)
+                val file = PdfExporter.saveTextExport(context, "LumenReel_Reporte_Errores.txt", reportText)
+                onReadyToShare(file, "text/plain")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorBanner.value = e.localizedMessage ?: "No se pudo exportar el reporte de errores."
             }
         }
     }
@@ -1634,11 +2141,22 @@ class StudioViewModel(
         val busy: BusyState
     )
 
+    private data class DiagnosticsAndVersions(
+        val errors: List<SystemErrorEntry>,
+        val repairSummary: String?,
+        val scriptVersions: List<ScriptVersion>,
+        val activeVersionMap: Map<String, String>
+    )
+
     private data class StudioExtrasState(
         val config: UserStudioConfig,
         val isDarkMode: Boolean,
         val milestones: List<ProductionMilestoneItem>,
-        val persistedFramePaths: Map<String, String>
+        val persistedFramePaths: Map<String, String>,
+        val scriptVersions: List<ScriptVersion>,
+        val activeScriptVersionByProject: Map<String, String>,
+        val systemErrors: List<SystemErrorEntry>,
+        val lastRepairSummary: String?
     )
 
     private data class BannerState(

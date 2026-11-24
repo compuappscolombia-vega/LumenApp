@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -58,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.util.LearningEngine
 import com.example.data.util.StudioLogic
@@ -82,6 +85,9 @@ fun ScreenplayTabView(
     onSaveScriptSchedulePdf: () -> Unit = {},
     onExportMarkdown: () -> Unit,
     onExportFountain: () -> Unit,
+    scriptVersions: List<ScriptVersion> = emptyList(),
+    activeScriptVersionId: String? = null,
+    onOpenScriptVersions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
@@ -146,7 +152,7 @@ fun ScreenplayTabView(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .heightIn(min = 48.dp)
                             .testTag("screenplay_dictate_scene_button")
                     ) {
                         Icon(
@@ -157,6 +163,49 @@ fun ScreenplayTabView(
                         )
                         Spacer(Modifier.size(6.dp))
                         Text("Dictar nueva escena por micrófono", color = colors.primary, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                val seqVersionsCount = remember(scriptVersions, sequence.id) {
+                    scriptVersions.count { it.sequenceId == sequence.id }
+                }
+                val activeVersion = remember(scriptVersions, activeScriptVersionId) {
+                    scriptVersions.firstOrNull { it.id == activeScriptVersionId }
+                }
+                OutlinedButton(
+                    onClick = onOpenScriptVersions,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("screenplay_versions_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = colors.secondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.size(6.dp))
+                    Text(
+                        text = "Versiones en Firestore ($seqVersionsCount)",
+                        color = colors.secondary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (activeVersion != null) {
+                        Surface(
+                            color = colors.primaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = activeVersion.versionLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
 

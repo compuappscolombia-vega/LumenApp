@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,7 +39,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,9 +67,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -91,7 +100,8 @@ fun SourceIngestModalSheet(
     onSaveBible: (String) -> Unit,
     onAnalyzeAudio: (AttachedSourceFile) -> Unit,
     onProduceSequence: () -> Unit,
-    onCreateManualDraft: () -> Unit
+    onCreateManualDraft: () -> Unit,
+    onVoiceDictationError: (String) -> Unit = {}
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -103,16 +113,20 @@ fun SourceIngestModalSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.65f))
                 .statusBarsPadding()
-                .imePadding()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss
-                ),
+                .imePadding(),
             contentAlignment = Alignment.BottomCenter
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    )
+            )
             val colors = MaterialTheme.colorScheme
             Surface(
                 color = colors.surface,
@@ -123,11 +137,13 @@ fun SourceIngestModalSheet(
                     .fillMaxWidth()
                     .fillMaxHeight(0.92f)
                     .navigationBarsPadding()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    )
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent()
+                            }
+                        }
+                    }
             ) {
                 SourceIngestContent(
                     project = project,
@@ -140,13 +156,15 @@ fun SourceIngestModalSheet(
                     onSaveBible = onSaveBible,
                     onAnalyzeAudio = onAnalyzeAudio,
                     onProduceSequence = onProduceSequence,
-                    onCreateManualDraft = onCreateManualDraft
+                    onCreateManualDraft = onCreateManualDraft,
+                    onVoiceDictationError = onVoiceDictationError
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SourceIngestContent(
     project: ProductionProject,
@@ -160,11 +178,30 @@ fun SourceIngestContent(
     onAnalyzeAudio: (AttachedSourceFile) -> Unit,
     onProduceSequence: () -> Unit,
     onCreateManualDraft: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onVoiceDictationError: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var clipboardNotice by remember { mutableStateOf<String?>(null) }
+    val scriptMetrics = remember(draft.sourceText) {
+        StudioLogic.computeScreenplayInputMetrics(draft.sourceText)
+    }
+    val voiceDictation = rememberVoiceDictationController { transcript ->
+        clipboardNotice = "Dictado agregado al guion."
+        onDraftChange {
+            it.copy(
+                sourceText = StudioLogic.appendDictatedTranscript(it.sourceText, transcript),
+                ingestError = null
+            )
+        }
+    }
+    LaunchedEffect(voiceDictation.errorMessage) {
+        val err = voiceDictation.errorMessage
+        if (!err.isNullOrBlank()) {
+            onVoiceDictationError(err)
+        }
+    }
 
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -213,12 +250,12 @@ fun SourceIngestContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.ingest_title),
+                    text = "Editor de Guion e Ingesta IA",
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.primary
                 )
                 Text(
-                    text = project.title,
+                    text = "${project.title} · Redacción técnica + análisis Gemini",
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.onSurfaceVariant.copy(alpha = 0.78f)
                 )
@@ -509,18 +546,35 @@ fun SourceIngestContent(
             }
         }
 
-        // Source Text Input + Explicit Paste & Sample controls
+        // Screenwriting Editor Header + Voice Dictate + Paste & Sample controls
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.ingest_text_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.onSurfaceVariant
+                text = "Editor de Guion Cinematográfico",
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.onSurface
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                TextButton(
+                    onClick = { voiceDictation.startOrStop() },
+                    modifier = Modifier.testTag("ingest_voice_dictate_button")
+                ) {
+                    Icon(
+                        imageVector = if (voiceDictation.isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                        contentDescription = stringResource(R.string.cd_voice_dictate_scene),
+                        tint = if (voiceDictation.isListening) colors.error else colors.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.size(3.dp))
+                    Text(
+                        text = if (voiceDictation.isListening) "Detener" else "Dictar",
+                        color = if (voiceDictation.isListening) colors.error else colors.primary,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
                 TextButton(
                     onClick = {
                         val clip = readClipboardText(context)
@@ -537,7 +591,7 @@ fun SourceIngestContent(
                     modifier = Modifier.testTag("ingest_paste_source_button")
                 ) {
                     Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(4.dp))
+                    Spacer(Modifier.size(3.dp))
                     Text("Pegar", color = colors.primary, style = MaterialTheme.typography.labelSmall)
                 }
                 TextButton(
@@ -554,9 +608,71 @@ fun SourceIngestContent(
                     modifier = Modifier.testTag("ingest_load_sample_button")
                 ) {
                     Icon(Icons.Rounded.AutoFixHigh, contentDescription = null, tint = colors.secondary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(4.dp))
+                    Spacer(Modifier.size(3.dp))
                     Text("Ejemplo", color = colors.secondary, style = MaterialTheme.typography.labelSmall)
                 }
+            }
+        }
+
+        // Screenplay Formatting Helper Chips
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            StudioLogic.ScreenplayFormatSnippet.entries.forEach { snippet ->
+                AssistChip(
+                    onClick = {
+                        onDraftChange {
+                            it.copy(
+                                sourceText = StudioLogic.insertScreenplaySnippet(it.sourceText, snippet),
+                                ingestError = null
+                            )
+                        }
+                    },
+                    label = {
+                        Text(
+                            text = "+ ${snippet.label}",
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    modifier = Modifier.testTag("script_snippet_${snippet.id}")
+                )
+            }
+        }
+
+        if (voiceDictation.isListening) {
+            Surface(
+                color = colors.primaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = if (voiceDictation.partialTranscript.isBlank()) {
+                        "Escuchando dictado de guion…"
+                    } else {
+                        "Dictando: «${voiceDictation.partialTranscript}»"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        if (!voiceDictation.errorMessage.isNullOrBlank()) {
+            Surface(
+                color = colors.errorContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = voiceDictation.errorMessage!!,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.onErrorContainer,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
             }
         }
 
@@ -576,16 +692,96 @@ fun SourceIngestContent(
             placeholder = {
                 Text(
                     stringResource(R.string.ingest_text_hint),
-                    color = colors.onSurfaceVariant.copy(alpha = 0.72f)
+                    color = colors.onSurfaceVariant.copy(alpha = 0.72f),
+                    fontFamily = FontFamily.Monospace
                 )
             },
-            minLines = 4,
-            maxLines = 8,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            minLines = 6,
+            maxLines = 12,
             colors = fieldColors(),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("ingest_source_text_input")
         )
+
+        // Live Screenplay Telemetry Bar
+        Surface(
+            color = colors.surfaceVariant,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
+                .semantics(mergeDescendants = true) {}
+                .testTag("script_editor_metrics_bar")
+        ) {
+            Text(
+                text = "Escenas: ${scriptMetrics.sceneCount} · Líneas: ${scriptMetrics.lineCount} · Palabras: ${scriptMetrics.wordCount} · Duración est.: ~${scriptMetrics.estimatedMinutes} min · Cues: ${scriptMetrics.cueCount}",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+            )
+        }
+
+        // Gemini Technical Production Categories Preview
+        Surface(
+            color = colors.surfaceVariant.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, colors.primary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                .testTag("gemini_technical_categories_card")
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                    Text(
+                        text = "Análisis Técnico Automático con Gemini AI",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Text(
+                    text = "Al pulsar analizar, Gemini desglosará tu guion en categorías técnicas listas para rodaje:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "Cámara y Óptica",
+                        "Iluminación Kelvin",
+                        "Lista de Planos 3D",
+                        "Sonido Atmos",
+                        "VFX / SFX",
+                        "Guion y Storyboard"
+                    ).forEach { category ->
+                        Surface(
+                            color = colors.surface,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(8.dp))
+                        ) {
+                            Text(
+                                text = category,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onSurface,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         // Continuity Bible Editor
         Surface(
@@ -708,7 +904,7 @@ fun SourceIngestContent(
                     } else {
                         Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.ingest_produce_cta), fontWeight = FontWeight.Bold)
+                        Text("Analizar guion con Gemini (Categorías Técnicas)", fontWeight = FontWeight.Bold)
                     }
                 }
 

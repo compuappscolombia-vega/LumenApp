@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -109,19 +110,27 @@ import com.example.data.model.ProductionFolder
 import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.SequenceVersionStatus
+import com.example.data.model.SystemErrorSource
 import com.example.data.model.WorkspaceTab
 import com.example.data.repository.LOCAL_GUEST_UID
+import com.example.data.repository.PersistedAccountSession
+import com.example.data.util.ManualQuickAction
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.components.AccountDialog
 import com.example.ui.components.AddProductionFolderDialog
 import com.example.ui.components.AgentBlueprintDialog
+import com.example.ui.components.InteractiveManualDialog
 import com.example.ui.components.LearningMemoryDialog
 import com.example.ui.components.NewProjectDialog
 import com.example.ui.components.ProductionCalendarDialog
 import com.example.ui.components.ProductionFolderDetailDialog
+import com.example.ui.components.ProjectFolderManagerDialog
+import com.example.ui.components.ScriptVersionsDialog
 import com.example.ui.components.SourceIngestModalSheet
+import com.example.ui.components.StoryboardFolderGalleryDialog
 import com.example.ui.components.StudioLoadingOverlay
+import com.example.ui.components.SystemErrorCenterDialog
 import com.example.ui.theme.LumenReelTheme
 import com.example.ui.viewmodel.StudioUiState
 import com.example.ui.viewmodel.StudioViewModel
@@ -133,9 +142,11 @@ import java.io.File
 @Composable
 fun MainStudioScreen(
     currentUser: FirebaseUser?,
+    persistedSession: PersistedAccountSession = PersistedAccountSession(),
     authStatusMessage: String? = null,
     onClearAuthStatus: () -> Unit = {},
     onOptionalGoogleSignIn: () -> Unit = {},
+    onResyncGoogleSession: () -> Unit = {},
     onSignOut: () -> Unit,
     onShareFile: (File, String) -> Unit
 ) {
@@ -209,10 +220,12 @@ fun MainStudioScreen(
         is UiState.Success -> {
             StudioWorkspaceShell(
                 currentUser = currentUser,
+                persistedSession = persistedSession,
                 activeUid = activeUid,
                 authStatusMessage = authStatusMessage,
                 onClearAuthStatus = onClearAuthStatus,
                 onOptionalGoogleSignIn = onOptionalGoogleSignIn,
+                onResyncGoogleSession = onResyncGoogleSession,
                 ui = state.data,
                 vm = vm,
                 onSignOut = onSignOut,
@@ -226,10 +239,12 @@ fun MainStudioScreen(
 @Composable
 private fun StudioWorkspaceShell(
     currentUser: FirebaseUser?,
+    persistedSession: PersistedAccountSession,
     activeUid: String,
     authStatusMessage: String?,
     onClearAuthStatus: () -> Unit,
     onOptionalGoogleSignIn: () -> Unit,
+    onResyncGoogleSession: () -> Unit,
     ui: StudioUiState,
     vm: StudioViewModel,
     onSignOut: () -> Unit,
@@ -244,7 +259,12 @@ private fun StudioWorkspaceShell(
     var showBlueprintDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var selectedFolderForDetail by remember { mutableStateOf<ProductionFolder?>(null) }
+    var galleryFolderForDialog by remember { mutableStateOf<ProductionFolder?>(null) }
+    var showScriptVersionsDialog by remember { mutableStateOf(false) }
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var folderManagerProjectId by remember { mutableStateOf<String?>(null) }
+    var showErrorCenterDialog by remember { mutableStateOf(false) }
+    var showInteractiveManualDialog by remember { mutableStateOf(false) }
     var overflowExpanded by remember { mutableStateOf(false) }
     var sequenceMenuExpanded by remember { mutableStateOf(false) }
     var pendingDevicePdfFile by remember { mutableStateOf<File?>(null) }
@@ -261,6 +281,13 @@ private fun StudioWorkspaceShell(
 
     val requestSaveScriptAndSchedulePdf: (ProductionProject, ProductionSequence) -> Unit = { proj, seq ->
         vm.exportScriptAndSchedulePdf(context, proj, seq) { generatedFile ->
+            pendingDevicePdfFile = generatedFile
+            savePdfLauncher.launch(generatedFile.name)
+        }
+    }
+
+    val requestSaveManualPdf: () -> Unit = {
+        vm.exportUserManualForDeviceSave(context) { generatedFile ->
             pendingDevicePdfFile = generatedFile
             savePdfLauncher.launch(generatedFile.name)
         }
@@ -315,7 +342,18 @@ private fun StudioWorkspaceShell(
                     onExportManualPdf = { vm.exportUserManualPdf(context, onShareFile) },
                     onExportLibraryPdf = { vm.exportLibraryPdf(context, ui.projects, onShareFile) },
                     onOpenAccount = { showAccountDialog = true },
-                    onDismissBanner = vm::clearBanners
+                    onDismissBanner = vm::clearBanners,
+                    openErrorCount = ui.openErrorCount,
+                    onOpenFolderManager = { proj ->
+                        vm.selectProject(proj.id)
+                        folderManagerProjectId = proj.id
+                    },
+                    onOpenScriptEditor = { proj ->
+                        vm.selectProject(proj.id)
+                        vm.setShowIngestSheet(true)
+                    },
+                    onOpenInteractiveManual = { showInteractiveManualDialog = true },
+                    onOpenErrorCenter = { showErrorCenterDialog = true }
                 )
             } else {
             BackHandler {
@@ -560,13 +598,48 @@ private fun StudioWorkspaceShell(
                                             showBlueprintDialog = true
                                         }
                                     )
+                                    if (activeProj != null) {
+                                        DropdownMenuItem(
+                                            leadingIcon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                                            text = { Text("Gestor de carpetas") },
+                                            onClick = {
+                                                overflowExpanded = false
+                                                folderManagerProjectId = activeProj.id
+                                            },
+                                            modifier = Modifier.testTag("studio_folders_menu_item")
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.AutoStories, contentDescription = null) },
-                                        text = { Text(stringResource(R.string.action_user_manual)) },
+                                        text = { Text("Manual interactivo y PDF") },
                                         onClick = {
                                             overflowExpanded = false
-                                            vm.exportUserManualPdf(context, onShareFile)
-                                        }
+                                            showInteractiveManualDialog = true
+                                        },
+                                        modifier = Modifier.testTag("studio_manual_menu_item")
+                                    )
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Rounded.Build,
+                                                contentDescription = null,
+                                                tint = if (ui.openErrorCount > 0) colors.error else colors.onSurface
+                                            )
+                                        },
+                                        text = {
+                                            Text(
+                                                if (ui.openErrorCount > 0) {
+                                                    "Errores y reparación (${ui.openErrorCount})"
+                                                } else {
+                                                    "Registro de errores y reparación"
+                                                }
+                                            )
+                                        },
+                                        onClick = {
+                                            overflowExpanded = false
+                                            showErrorCenterDialog = true
+                                        },
+                                        modifier = Modifier.testTag("studio_errors_menu_item")
                                     )
                                     DropdownMenuItem(
                                         leadingIcon = { Icon(Icons.Rounded.PictureAsPdf, contentDescription = null) },
@@ -781,13 +854,20 @@ private fun StudioWorkspaceShell(
                                     },
                                     onExportFountain = {
                                         vm.exportScreenplayText(context, activeProject.title, activeSequence, fountain = true, onReadyToShare = onShareFile)
-                                    }
+                                    },
+                                    scriptVersions = ui.scriptVersions,
+                                    activeScriptVersionId = ui.activeScriptVersionId,
+                                    onOpenScriptVersions = { showScriptVersionsDialog = true }
                                 )
                                 WorkspaceTab.STORYBOARD -> StoryboardTabView(
                                     sequence = activeSequence,
                                     generatingFrameId = ui.generatingFrameId,
                                     onGenerateImage = { frame ->
                                         vm.generateStoryboardImage(context, activeProject.id, activeSequence, frame)
+                                    },
+                                    project = activeProject,
+                                    onGenerateFolderFrame = { seq, frame ->
+                                        vm.generateStoryboardImage(context, activeProject.id, seq, frame)
                                     }
                                 )
                                 WorkspaceTab.AGENT -> Unit
@@ -869,6 +949,9 @@ private fun StudioWorkspaceShell(
                     attachedBytes = draft.attachedFile?.bytes,
                     onDone = { vm.setShowIngestSheet(false) }
                 )
+            },
+            onVoiceDictationError = { errMsg ->
+                vm.logSystemError(SystemErrorSource.AUDIO, errMsg, "VoiceDictation", activeProj.id)
             }
         )
     }
@@ -885,14 +968,18 @@ private fun StudioWorkspaceShell(
 
     val activeProjectForFolders = ui.activeProject
     if (selectedFolderForDetail != null && activeProjectForFolders != null) {
+        val detailFolder = selectedFolderForDetail!!
         ProductionFolderDetailDialog(
-            folder = selectedFolderForDetail!!,
+            folder = detailFolder,
             onDismiss = { selectedFolderForDetail = null },
             onSaveNotes = { notes ->
-                vm.updateProductionFolderNotes(activeProjectForFolders, selectedFolderForDetail!!.id, notes)
+                vm.updateProductionFolderNotes(activeProjectForFolders, detailFolder.id, notes)
             },
             onOpenWorkspaceTab = {
-                vm.openProductionFolderTab(selectedFolderForDetail!!)
+                vm.openProductionFolderTab(detailFolder)
+            },
+            onOpenGallery = {
+                galleryFolderForDialog = detailFolder
             }
         )
     }
@@ -928,6 +1015,8 @@ private fun StudioWorkspaceShell(
             isDarkMode = ui.isDarkMode,
             onToggleDarkMode = vm::toggleDarkMode,
             onSaveStudioConfig = vm::updateStudioConfig,
+            persistedSession = persistedSession,
+            onResyncGoogleSession = onResyncGoogleSession,
             authStatusMessage = authStatusMessage,
             onClearAuthStatus = onClearAuthStatus,
             onOptionalGoogleSignIn = onOptionalGoogleSignIn,
@@ -960,6 +1049,126 @@ private fun StudioWorkspaceShell(
                 ui.activeProject?.let { proj ->
                     vm.deleteMilestone(proj.id, milestoneId)
                 }
+            }
+        )
+    }
+
+    val folderManagerTarget = folderManagerProjectId?.let { pid ->
+        ui.projects.firstOrNull { it.id == pid }
+    }
+    if (folderManagerTarget != null) {
+        ProjectFolderManagerDialog(
+            project = folderManagerTarget,
+            onDismiss = { folderManagerProjectId = null },
+            onCreateFolder = { name, category, desc ->
+                vm.addProductionFolder(folderManagerTarget, name, category, desc)
+            },
+            onUpdateFolderNotes = { folderId, notes ->
+                vm.updateProductionFolderNotes(folderManagerTarget, folderId, notes)
+            },
+            onDeleteFolder = { folderId ->
+                vm.deleteProductionFolder(folderManagerTarget, folderId)
+            },
+            onAssignSequenceToFolder = { folderId, sequenceId ->
+                vm.assignSequenceToFolder(folderManagerTarget, folderId, sequenceId)
+            },
+            onRemoveSequenceFromFolder = { folderId, sequenceId ->
+                vm.removeSequenceFromFolder(folderManagerTarget, folderId, sequenceId)
+            },
+            onOpenWorkspaceTab = { folder, seqId, tabOverride ->
+                vm.openFolderInWorkspace(folderManagerTarget, folder, seqId, tabOverride)
+                folderManagerProjectId = null
+            },
+            onOpenScriptEditor = {
+                folderManagerProjectId = null
+                vm.selectProject(folderManagerTarget.id)
+                vm.setShowIngestSheet(true)
+            },
+            onOpenFolderGallery = { folder ->
+                galleryFolderForDialog = folder
+            }
+        )
+    }
+
+    val galleryProj = ui.activeProject
+    val galleryFolder = galleryFolderForDialog
+    if (galleryFolder != null && galleryProj != null) {
+        StoryboardFolderGalleryDialog(
+            project = galleryProj,
+            initialFolder = galleryFolder,
+            generatingFrameId = ui.generatingFrameId,
+            onDismiss = { galleryFolderForDialog = null },
+            onGenerateImage = { seq, frame ->
+                vm.generateStoryboardImage(context, galleryProj.id, seq, frame)
+            }
+        )
+    }
+
+    val versionProj = ui.activeProject
+    val versionSeq = ui.activeSequence
+    if (showScriptVersionsDialog && versionProj != null && versionSeq != null) {
+        ScriptVersionsDialog(
+            project = versionProj,
+            activeSequence = versionSeq,
+            versions = ui.scriptVersions,
+            activeVersionId = ui.activeScriptVersionId,
+            onDismiss = { showScriptVersionsDialog = false },
+            onSaveVersion = { label, note ->
+                vm.saveScriptVersion(versionProj, versionSeq, label, note)
+            },
+            onSwitchVersion = { version ->
+                vm.switchScriptVersion(versionProj, versionSeq, version)
+            },
+            onUpdateMetadata = { versionId, label, note ->
+                vm.updateScriptVersionMetadata(versionProj.id, versionId, label, note)
+            },
+            onDeleteVersion = { versionId ->
+                vm.deleteScriptVersion(versionProj.id, versionId)
+            }
+        )
+    }
+
+    if (showErrorCenterDialog) {
+        SystemErrorCenterDialog(
+            errors = ui.systemErrors,
+            lastRepairSummary = ui.lastRepairSummary,
+            onDismiss = { showErrorCenterDialog = false },
+            onRepairError = { errId -> vm.repairSystemError(errId) },
+            onRunFullRepair = { vm.runFullSystemRepair() },
+            onMarkRepaired = { errId -> vm.markSystemErrorRepaired(errId) },
+            onClearRepaired = vm::clearRepairedSystemErrors,
+            onExportReport = { list -> vm.exportSystemErrorReport(context, list, onShareFile) }
+        )
+    }
+
+    if (showInteractiveManualDialog) {
+        InteractiveManualDialog(
+            onDismiss = { showInteractiveManualDialog = false },
+            onQuickAction = { action ->
+                showInteractiveManualDialog = false
+                when (action) {
+                    ManualQuickAction.OPEN_SCRIPT_EDITOR -> {
+                        if (ui.activeProject != null) vm.setShowIngestSheet(true)
+                        else showNewProjectDialog = true
+                    }
+                    ManualQuickAction.OPEN_FOLDER_MANAGER -> {
+                        val target = ui.activeProject
+                        if (target != null) folderManagerProjectId = target.id
+                        else showNewProjectDialog = true
+                    }
+                    ManualQuickAction.OPEN_CALENDAR -> vm.setShowCalendarDialog(true)
+                    ManualQuickAction.OPEN_THEME_SETTINGS -> showAccountDialog = true
+                    ManualQuickAction.OPEN_ERROR_CENTER -> showErrorCenterDialog = true
+                    ManualQuickAction.NONE -> Unit
+                }
+            },
+            onSaveManualPdf = {
+                showInteractiveManualDialog = false
+                requestSaveManualPdf()
+            },
+            onShareManualPdf = {
+                showInteractiveManualDialog = false
+                vm.exportUserManualPdf(context, onShareFile)
             }
         )
     }

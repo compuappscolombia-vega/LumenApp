@@ -37,8 +37,10 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderSpecial
 import androidx.compose.material.icons.rounded.Insights
@@ -116,7 +118,12 @@ fun ProjectDashboardScreen(
     onExportLibraryPdf: () -> Unit,
     onOpenAccount: () -> Unit,
     onDismissBanner: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    openErrorCount: Int = 0,
+    onOpenFolderManager: (ProductionProject) -> Unit = {},
+    onOpenScriptEditor: (ProductionProject) -> Unit = {},
+    onOpenInteractiveManual: () -> Unit = onExportManualPdf,
+    onOpenErrorCenter: () -> Unit = {}
 ) {
     var selectedSourceFilter by remember { mutableStateOf<SourceMaterialType?>(null) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -291,11 +298,35 @@ fun ProjectDashboardScreen(
                             )
                             DropdownMenuItem(
                                 leadingIcon = { Icon(Icons.Rounded.AutoStories, contentDescription = null) },
-                                text = { Text(stringResource(R.string.action_user_manual)) },
+                                text = { Text("Manual interactivo y PDF") },
                                 onClick = {
                                     overflowExpanded = false
-                                    onExportManualPdf()
-                                }
+                                    onOpenInteractiveManual()
+                                },
+                                modifier = Modifier.testTag("dashboard_manual_menu_item")
+                            )
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Rounded.Build,
+                                        contentDescription = null,
+                                        tint = if (openErrorCount > 0) colors.error else colors.onSurface
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        if (openErrorCount > 0) {
+                                            "Errores y reparación ($openErrorCount)"
+                                        } else {
+                                            "Registro de errores y reparación"
+                                        }
+                                    )
+                                },
+                                onClick = {
+                                    overflowExpanded = false
+                                    onOpenErrorCenter()
+                                },
+                                modifier = Modifier.testTag("dashboard_errors_menu_item")
                             )
                             DropdownMenuItem(
                                 leadingIcon = { Icon(Icons.Rounded.PictureAsPdf, contentDescription = null) },
@@ -406,6 +437,51 @@ fun ProjectDashboardScreen(
                                     value = totalFinals.toString(),
                                     accent = colors.onSurface,
                                     modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            val primaryTargetProject = remember(projects, activeProjectId) {
+                                projects.firstOrNull { it.id == activeProjectId } ?: projects.firstOrNull()
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                QuickStudioActionPill(
+                                    icon = Icons.Rounded.Folder,
+                                    label = "Carpetas",
+                                    accent = colors.primary,
+                                    onClick = {
+                                        if (primaryTargetProject != null) onOpenFolderManager(primaryTargetProject)
+                                        else onCreateProjectClick()
+                                    },
+                                    tag = "dashboard_quick_folders_button"
+                                )
+                                QuickStudioActionPill(
+                                    icon = Icons.Rounded.EditNote,
+                                    label = "Editor Guion IA",
+                                    accent = colors.secondary,
+                                    onClick = {
+                                        if (primaryTargetProject != null) onOpenScriptEditor(primaryTargetProject)
+                                        else onCreateProjectClick()
+                                    },
+                                    tag = "dashboard_quick_script_button"
+                                )
+                                QuickStudioActionPill(
+                                    icon = Icons.Rounded.AutoStories,
+                                    label = "Manual y PDF",
+                                    accent = colors.primary,
+                                    onClick = onOpenInteractiveManual,
+                                    tag = "dashboard_quick_manual_button"
+                                )
+                                QuickStudioActionPill(
+                                    icon = Icons.Rounded.Build,
+                                    label = if (openErrorCount > 0) "Errores ($openErrorCount)" else "Errores / Reparar",
+                                    accent = if (openErrorCount > 0) colors.error else colors.onSurfaceVariant,
+                                    onClick = onOpenErrorCenter,
+                                    tag = "dashboard_quick_errors_button"
                                 )
                             }
                         }
@@ -565,6 +641,8 @@ fun ProjectDashboardScreen(
                                 project = proj,
                                 isSelected = proj.id == activeProjectId,
                                 onSelect = { onSelectProject(proj) },
+                                onManageFolders = { onOpenFolderManager(proj) },
+                                onOpenScriptEditor = { onOpenScriptEditor(proj) },
                                 onRequestDelete = { projectPendingDelete = proj }
                             )
                         }
@@ -584,6 +662,8 @@ fun ProjectDashboardScreen(
                                 project = proj,
                                 isSelected = proj.id == activeProjectId,
                                 onSelect = { onSelectProject(proj) },
+                                onManageFolders = { onOpenFolderManager(proj) },
+                                onOpenScriptEditor = { onOpenScriptEditor(proj) },
                                 onRequestDelete = { projectPendingDelete = proj }
                             )
                         }
@@ -630,6 +710,8 @@ private fun ProjectDashboardCard(
     project: ProductionProject,
     isSelected: Boolean,
     onSelect: () -> Unit,
+    onManageFolders: () -> Unit,
+    onOpenScriptEditor: () -> Unit,
     onRequestDelete: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -778,7 +860,9 @@ private fun ProjectDashboardCard(
                         Surface(
                             color = colors.surfaceVariant,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.border(1.dp, colors.outline, RoundedCornerShape(8.dp))
+                            modifier = Modifier
+                                .border(1.dp, colors.outline, RoundedCornerShape(8.dp))
+                                .clickable(onClick = onManageFolders)
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -799,6 +883,60 @@ private fun ProjectDashboardCard(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    color = colors.primaryContainer.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onManageFolders)
+                        .testTag("project_manage_folders_${project.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = colors.onPrimaryContainer, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.size(5.dp))
+                        Text(
+                            text = "Carpetas (${folders.size})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+                }
+                Surface(
+                    color = colors.secondaryContainer.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenScriptEditor)
+                        .testTag("project_open_script_${project.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Rounded.EditNote, contentDescription = null, tint = colors.onSecondaryContainer, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.size(5.dp))
+                        Text(
+                            text = "Guion IA",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.onSecondaryContainer,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
                     }
                 }
             }
@@ -870,6 +1008,40 @@ private fun DashboardStatPill(
         ) {
             Text(text = value, style = MaterialTheme.typography.titleMedium, color = accent, fontWeight = FontWeight.Bold)
             Text(text = label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun QuickStudioActionPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accent: Color,
+    onClick: () -> Unit,
+    tag: String
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        color = colors.surfaceVariant,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .testTag(tag)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
         }
     }
 }

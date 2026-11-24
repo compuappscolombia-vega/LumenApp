@@ -508,4 +508,55 @@ object StudioLogic {
             "$cleanExisting\n$punctuated"
         }
     }
+
+    data class ScreenplayInputMetrics(
+        val lineCount: Int,
+        val wordCount: Int,
+        val sceneCount: Int,
+        val cueCount: Int,
+        val estimatedMinutes: Double
+    )
+
+    enum class ScreenplayFormatSnippet(
+        val id: String,
+        val label: String,
+        val insertionText: String
+    ) {
+        INT_SCENE("int", "INT.", "INT. LOCACIÓN - DÍA\n\n"),
+        EXT_SCENE("ext", "EXT.", "EXT. LOCACIÓN - NOCHE\n\n"),
+        DIALOGUE("dialogue", "DIÁLOGO", "PERSONAJE\n(con calma)\nTexto del diálogo.\n"),
+        CAMERA("camera", "CÁMARA", "[CÁMARA] Plano medio 50mm con movimiento lento.\n"),
+        SOUND("sound", "SONIDO", "[SONIDO] Ambiente atmosférico y silencio tenso.\n")
+    }
+
+    private val SCENE_HEADING_REGEX = Regex("""^(INT\.|EXT\.|INT\./EXT\.|I/E\.)(\s|$)""", RegexOption.IGNORE_CASE)
+    private val TECHNICAL_CUE_REGEX = Regex("""^\[(CÁMARA|CAMARA|SONIDO|VFX|SFX)\]""", RegexOption.IGNORE_CASE)
+
+    fun computeScreenplayInputMetrics(rawText: String): ScreenplayInputMetrics {
+        val trimmed = rawText.trim()
+        if (trimmed.isEmpty()) {
+            return ScreenplayInputMetrics(0, 0, 0, 0, 0.0)
+        }
+        val lines = trimmed.lines()
+        val words = trimmed.split(Regex("""\s+""")).count { it.isNotBlank() }
+        val scenes = lines.count { SCENE_HEADING_REGEX.containsMatchIn(it.trim()) }
+        val cues = lines.count { TECHNICAL_CUE_REGEX.containsMatchIn(it.trim()) }
+        val estMin = max(0.5, round(((words / 145.0)) * 10.0) / 10.0)
+        return ScreenplayInputMetrics(
+            lineCount = lines.size,
+            wordCount = words,
+            sceneCount = scenes,
+            cueCount = cues,
+            estimatedMinutes = estMin
+        )
+    }
+
+    fun insertScreenplaySnippet(currentText: String, snippet: ScreenplayFormatSnippet): String {
+        val trimmedEnd = currentText.trimEnd()
+        return if (trimmedEnd.isBlank()) {
+            snippet.insertionText
+        } else {
+            "$trimmedEnd\n\n${snippet.insertionText}"
+        }
+    }
 }

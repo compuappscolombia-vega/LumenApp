@@ -509,45 +509,105 @@ object PdfExporter {
     }
 
     suspend fun exportUserManualPdf(context: Context): File = withContext(Dispatchers.IO) {
-        val writer = PdfWriter()
-        writer.startNewPage()
-        writer.drawBanner(
-            title = "LUMENREEL STUDIO",
-            subtitle = "MANUAL DE USO E INSTRUCCIONES DEL SISTEMA",
-            meta = "Guía rápida para producción cinematográfica con Gemini & Firestore"
-        )
-
-        writer.drawParagraph("LumenReel Studio convierte capítulos de libros, audiolibros (MP3, WAV, M4A, OGG) e historias originales en producciones cinematográficas completas directamente desde Android.")
-
-        writer.drawCalloutBox(
-            "FLUJO RÁPIDO EN 5 PASOS",
-            listOf(
-                "1. Inicia sesión con tu cuenta de Google para aislar tu estudio privado en la nube.",
-                "2. Crea una producción e ingresa tu capítulo, PDF o archivo de audio en la Mesa de Ingesta.",
-                "3. Revisa Dirección (Radar de Progreso, Paleta, Iluminación Kelvin y Studio Intelligence).",
-                "4. Explora Planos y Sonido, exporta el Guion (.md / .fountain) y genera Storyboard con Nano.",
-                "5. Aprueba la Versión Final para desbloquear la exportación oficial en Bitácora PDF."
-            )
-        )
-
-        writer.drawSectionHeading("PASO 1. Acceso y Privacidad con Google")
-        writer.drawParagraph("• Autenticación obligatoria mediante Google Sign-In (Credential Manager). Cada cuenta mantiene proyectos, secuencias, historial del agente y memoria de aprendizaje privados.")
-
-        writer.drawSectionHeading("PASO 2. Ingesta de Material Fuente y Biblia")
-        writer.drawParagraph("• Pega texto o adjunta archivos PDF, TXT, MD, Fountain o Audio (MP3, WAV, M4A, OGG).")
-        writer.drawParagraph("• Analizar solo audio extrae transcripción verbatim, estilo vocal, arco emocional y efectos sonoros detectados.")
-
-        writer.drawSectionHeading("PASO 3. Agente Autónomo Tripartito")
-        writer.drawParagraph("• Conversa en modo Consejo Completo, Director de Cine, Guionista o Experto VFX/SFX para editar automáticamente la Biblia, cámara, VFX, guion o storyboard.")
-
-        writer.drawSectionHeading("PASO 4. Dirección, Radar y Studio Intelligence")
-        writer.drawParagraph("• El Gráfico Radar mide 4 ejes (Guion, Iluminación, Efectos Visuales y Sonido) y compara el promedio del proyecto contra la secuencia activa.")
-        writer.drawParagraph("• Califica tus secuencias (1–5 ★) para alimentar Studio Intelligence y reutilizar tus mejores decisiones ópticas.")
-
-        writer.drawSectionHeading("PASO 5. Versión Final y Exportación PDF")
-        writer.drawParagraph("• Las secuencias aprobadas como Versión Final quedan selladas contra cambios accidentales, nutren el Autoaprendizaje y habilitan la Bitácora PDF y Biblioteca PDF.")
-
+        val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.forLanguageTag("es-ES")).format(Date())
         val outFile = File(exportsDir(context), "LumenReel_Manual_de_Uso.pdf")
-        writer.writeToFile(outFile)
+        val writer = PdfWriter()
+        try {
+            writer.startNewPage()
+            writer.drawBanner(
+                title = "LUMENREEL STUDIO",
+                subtitle = "MANUAL INTERACTIVO DE USO Y DIAGNÓSTICO",
+                meta = "Guía completa de producción, carpetas, IA Gemini y reparación · $dateStr"
+            )
+
+            writer.drawParagraph(
+                "LumenReel Studio integra en una sola aplicación Android la escritura de guion técnico, análisis con Gemini AI, organización por carpetas de proyectos cinematográficos, escenario 3D, storyboard, calendario de rodaje y centro de auto-reparación de errores."
+            )
+
+            writer.drawCalloutBox(
+                "LISTA DE VERIFICACIÓN DE PRODUCCIÓN",
+                StudioManualCatalog.READINESS_CHECKLIST_STEPS.mapIndexed { idx, step -> "${idx + 1}. $step" }
+            )
+
+            StudioManualCatalog.SECTIONS.forEachIndexed { idx, section ->
+                writer.drawSectionHeading("${idx + 1}. ${section.title} (${section.badge})")
+                writer.drawParagraph(section.summary, bold = true, textSizeSp = 9.3f)
+                section.steps.forEachIndexed { sIdx, step ->
+                    writer.drawParagraph("   ${sIdx + 1}) $step", textSizeSp = 9f, spacingAfter = 4f)
+                }
+                if (section.proTip.isNotBlank()) {
+                    writer.drawParagraph(
+                        "Consejo del Estudio: ${section.proTip}",
+                        textSizeSp = 8.6f,
+                        color = Color.rgb(120, 82, 20),
+                        indent = 10f,
+                        spacingAfter = 8f
+                    )
+                }
+            }
+
+            writer.drawSectionHeading("GUÍA VISUAL DE RELACIONES DE ASPECTO")
+            for (spec in StudioManualCatalog.ASPECT_GUIDE_SPECS) {
+                writer.drawParagraph(
+                    "• ${spec.ratio} — ${spec.title}: ${spec.usageNote}",
+                    textSizeSp = 9f
+                )
+            }
+
+            writer.drawSectionHeading("TABLA RÁPIDA DE REPARACIÓN DE ERRORES")
+            writer.drawParagraph("• Error 403 / App Check / Sesión Google: Abrir «Errores y Reparación» -> «Verificar sesión y App Check» o usar «Crear borrador manual».")
+            writer.drawParagraph("• Cuota o red temporal en Firestore: Ejecutar «Reparar caché y sincronización»; los cambios locales permanecen seguros.")
+            writer.drawParagraph("• Archivo > 19 MB o ruta rota de Storyboard: Usar «Reparar adjuntos / storyboards» para limpiar referencias huérfanas.")
+            writer.drawParagraph("• Borradores incompletos o carpetas vacías: Ejecutar «Auto-reparación integral» para restaurar carpetas por plantilla.")
+
+            writer.writeToFile(outFile)
+        } catch (_: Throwable) {
+            runCatching { writer.document.close() }
+            writeMinimalFallbackManualPdf(outFile, dateStr)
+        }
+    }
+
+    private fun writeMinimalFallbackManualPdf(outFile: File, dateStr: String): File {
+        val textLines = buildList {
+            add("LUMENREEL STUDIO - MANUAL DE USO ($dateStr)")
+            StudioManualCatalog.SECTIONS.forEachIndexed { idx, s ->
+                add("${idx + 1}. ${s.title}: ${s.summary}")
+                s.steps.forEach { step -> add("   - $step") }
+            }
+            StudioManualCatalog.ASPECT_GUIDE_SPECS.forEach { spec ->
+                add("Aspecto ${spec.ratio}: ${spec.title} - ${spec.usageNote}")
+            }
+        }
+        val escapedBody = textLines.take(36).joinToString("\n") { line ->
+            val ascii = line.replace(Regex("[^\\x20-\\x7E]"), " ")
+                .replace("\\", "\\\\")
+                .replace("(", "\\(")
+                .replace(")", "\\)")
+                .take(92)
+            "($ascii) Tj T*"
+        }
+        val streamContent = "BT\n/F1 10 Tf\n14 TL\n44 790 Td\n$escapedBody\nET\n"
+        val streamBytes = streamContent.toByteArray(Charsets.US_ASCII)
+        val objs = listOf(
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+            "4 0 obj\n<< /Length ${streamBytes.size} >>\nstream\n${streamContent}endstream\nendobj\n",
+            "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+        )
+        val sb = StringBuilder("%PDF-1.4\n")
+        val offsets = mutableListOf(0)
+        for (obj in objs) {
+            offsets.add(sb.length)
+            sb.append(obj)
+        }
+        val xrefPos = sb.length
+        sb.append("xref\n0 ${objs.size + 1}\n0000000000 65535 f \n")
+        for (i in 1..objs.size) {
+            sb.append(String.format(Locale.US, "%010d 00000 n \n", offsets[i]))
+        }
+        sb.append("trailer\n<< /Size ${objs.size + 1} /Root 1 0 R >>\nstartxref\n$xrefPos\n%%EOF\n")
+        outFile.writeBytes(sb.toString().toByteArray(Charsets.US_ASCII))
+        return outFile
     }
 }

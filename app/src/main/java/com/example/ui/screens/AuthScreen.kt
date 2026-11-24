@@ -62,7 +62,9 @@ fun AuthScreen(
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val sessionHint = remember { authRepository.getSessionSnapshot(context) }
     var isBusy by remember { mutableStateOf(false) }
+    var isRestoringSession by remember { mutableStateOf(!sessionHint.explicitlySignedOut) }
     var attemptedSilent by remember { mutableStateOf(false) }
     var silentJob by remember { mutableStateOf<Job?>(null) }
     var authError by remember { mutableStateOf<String?>(null) }
@@ -71,11 +73,15 @@ fun AuthScreen(
         if (!attemptedSilent) {
             attemptedSilent = true
             withFrameNanos { }
-            delay(180L)
+            delay(120L)
             silentJob = launch {
-                val user = authRepository.attemptAutoSignIn(context)
-                if (user != null) {
-                    onSignedIn()
+                try {
+                    val user = authRepository.attemptAutoSignIn(context)
+                    if (user != null) {
+                        onSignedIn()
+                    }
+                } finally {
+                    isRestoringSession = false
                 }
             }
         }
@@ -197,6 +203,58 @@ fun AuthScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color = colors.onSurface
                         )
+                    }
+
+                    if (isRestoringSession) {
+                        Surface(
+                            color = colors.secondaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("auth_restoring_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = colors.secondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.auth_restoring_session),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = colors.onSecondaryContainer,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (sessionHint.email.isNotBlank()) {
+                                        Text(
+                                            text = sessionHint.email,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colors.onSecondaryContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else if (sessionHint.hasRememberedAccount && sessionHint.email.isNotBlank()) {
+                        Surface(
+                            color = colors.primaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("auth_remembered_account_banner")
+                        ) {
+                            Text(
+                                text = stringResource(R.string.auth_remembered_account, sessionHint.email),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onPrimaryContainer,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
                     }
 
                     if (!authError.isNullOrBlank()) {

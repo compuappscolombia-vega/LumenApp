@@ -28,8 +28,10 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,11 +69,15 @@ import com.example.data.model.ProductionFolder
 import com.example.data.model.SourceMaterialType
 import com.example.data.model.ThinkingDepth
 import com.example.data.model.UserStudioConfig
+import com.example.data.repository.PersistedAccountSession
 import com.example.data.util.LearningEngine
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioLogic
 import com.example.ui.screens.copyToClipboard
 import com.google.firebase.auth.FirebaseUser
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun NewProjectDialog(
@@ -364,7 +370,8 @@ fun ProductionFolderDetailDialog(
     folder: ProductionFolder,
     onDismiss: () -> Unit,
     onSaveNotes: (String) -> Unit,
-    onOpenWorkspaceTab: () -> Unit
+    onOpenWorkspaceTab: () -> Unit,
+    onOpenGallery: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     var notesDraft by remember(folder.id, folder.notes) { mutableStateOf(folder.notes) }
@@ -405,11 +412,26 @@ fun ProductionFolderDetailDialog(
                 )
                 OutlinedButton(
                     onClick = {
+                        onOpenGallery()
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("open_folder_gallery_button")
+                ) {
+                    Icon(Icons.Rounded.GridView, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("Abrir Galería Visual (Grid)", color = colors.primary)
+                }
+                OutlinedButton(
+                    onClick = {
                         onOpenWorkspaceTab()
                         onDismiss()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .testTag("open_folder_tab_button")
                 ) {
                     Text("Abrir sección vinculada", color = colors.secondary)
@@ -786,6 +808,8 @@ fun AccountDialog(
     isDarkMode: Boolean = studioConfig.isDarkMode,
     onToggleDarkMode: () -> Unit = {},
     onSaveStudioConfig: (UserStudioConfig) -> Unit = {},
+    persistedSession: PersistedAccountSession = PersistedAccountSession(),
+    onResyncGoogleSession: () -> Unit = {},
     authStatusMessage: String? = null,
     onClearAuthStatus: () -> Unit = {},
     onOptionalGoogleSignIn: () -> Unit = {},
@@ -793,6 +817,9 @@ fun AccountDialog(
     onSignOut: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val syncFormatter = remember {
+        SimpleDateFormat("dd MMM HH:mm", Locale("es"))
+    }
     var styleDraft by remember(preferredStyle, studioConfig.preferredStyle) {
         mutableStateOf(
             studioConfig.preferredStyle.ifBlank {
@@ -836,6 +863,39 @@ fun AccountDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant
                     )
+                    if (persistedSession.hasRememberedAccount) {
+                        Surface(
+                            color = colors.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, colors.outline, RoundedCornerShape(8.dp))
+                                .testTag("account_persistence_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Sesión Google recordada: ${persistedSession.email.ifBlank { persistedSession.displayName }}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                OutlinedButton(
+                                    onClick = onResyncGoogleSession,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("account_resync_button")
+                                ) {
+                                    Icon(Icons.Rounded.Sync, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.size(6.dp))
+                                    Text(stringResource(R.string.account_resync_cta), color = colors.primary)
+                                }
+                            }
+                        }
+                    }
                 } else {
                     Text(
                         text = user.displayName ?: "Director LumenReel",
@@ -853,22 +913,44 @@ fun AccountDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .border(1.dp, colors.outline, RoundedCornerShape(8.dp))
+                            .testTag("account_persistence_card")
                     ) {
                         Column(
                             modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "Perfil independiente en Cloud Firestore",
+                                text = "Sesión persistente Google activa",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = colors.secondary,
                                 fontWeight = FontWeight.SemiBold
+                            )
+                            val syncedLabel = if (persistedSession.lastSyncedAtMillis > 0L) {
+                                "Última sincronización: ${syncFormatter.format(Date(persistedSession.lastSyncedAtMillis))}"
+                            } else {
+                                "Sincronización continua con Cloud Firestore habilitada"
+                            }
+                            Text(
+                                text = "$syncedLabel · Respeta reinicios y reinstalaciones del emulador",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onSurfaceVariant
                             )
                             Text(
                                 text = "UID privado: ${user.uid}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                                 color = colors.onSurfaceVariant
                             )
+                            OutlinedButton(
+                                onClick = onResyncGoogleSession,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("account_resync_button")
+                            ) {
+                                Icon(Icons.Rounded.Sync, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text(stringResource(R.string.account_resync_cta), color = colors.primary)
+                            }
                         }
                     }
                 }

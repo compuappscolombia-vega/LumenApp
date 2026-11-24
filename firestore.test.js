@@ -192,7 +192,7 @@ test("Owner creates profile with studio config, project, sequence, milestones, s
       })
   );
 
-  // Update productionFolders on owned project
+  // Update productionFolders on owned project with notes and linkedSequenceIds
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_1").update({
       productionFolders: [
@@ -203,6 +203,7 @@ test("Owner creates profile with studio config, project, sequence, milestones, s
           description: "Guion maestro",
           notes: "Revisar Acto II",
           targetTab: "screenplay",
+          linkedSequenceIds: ["seq_1"],
         },
       ],
       updatedAt: new Date(Date.now() - 1000),
@@ -438,5 +439,135 @@ test("Rejects future timestamps and privilege escalation on user profile", async
       createdAt: new Date(Date.now() + 60000),
       updatedAt: new Date(Date.now() + 60000),
     })
+  );
+});
+
+test("Owner saves, updates label/note, and deletes script_versions while blocking invalid payloads and cross-user reads", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const past = new Date(Date.now() - 2000);
+
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).collection("projects").doc("proj_sv").set({
+      ownerId: ALICE_UID,
+      title: "Guion Versionado",
+      genreStyle: "Drama",
+      defaultSourceType: "story",
+      continuityBible: "",
+      sequencesCount: 1,
+      assetsCount: 0,
+      createdAt: past,
+      updatedAt: past,
+    })
+  );
+
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .doc("sv_1")
+      .set({
+        projectId: "proj_sv",
+        ownerId: ALICE_UID,
+        sequenceId: "seq_1",
+        sequenceTitle: "Acto I",
+        versionNumber: 1,
+        versionLabel: "v1 · Borrador inicial",
+        changeNote: "Primer corte de diálogos",
+        sceneCount: 1,
+        wordCount: 24,
+        scenes: [
+          {
+            sceneNumber: "1",
+            slugline: "INT. SALA - NOCHE",
+            timeOfDay: "NOCHE",
+            beats: [{ type: "action", text: "Silencio en el estudio." }],
+          },
+        ],
+        createdAt: past,
+        updatedAt: past,
+      })
+  );
+
+  // Label & note update allowed
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .doc("sv_1")
+      .update({
+        versionLabel: "v1 · Revisado",
+        changeNote: "Ajuste de ritmo en escena 1",
+        updatedAt: new Date(Date.now() - 500),
+      })
+  );
+
+  // Mutating immutable scenes snapshot or versionNumber on existing snapshot fails
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .doc("sv_1")
+      .update({
+        versionNumber: 99,
+        updatedAt: new Date(Date.now() - 400),
+      })
+  );
+
+  // Ghost `id` field rejected
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .doc("sv_bad")
+      .set({
+        id: "sv_bad",
+        projectId: "proj_sv",
+        ownerId: ALICE_UID,
+        sequenceId: "seq_1",
+        sequenceTitle: "Acto I",
+        versionNumber: 2,
+        versionLabel: "v2",
+        changeNote: "",
+        sceneCount: 0,
+        wordCount: 0,
+        scenes: [],
+        createdAt: past,
+        updatedAt: past,
+      })
+  );
+
+  // Cross-user read/write blocked
+  await assertFails(
+    bobDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .get()
+  );
+
+  await assertSucceeds(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("projects")
+      .doc("proj_sv")
+      .collection("script_versions")
+      .doc("sv_1")
+      .delete()
   );
 });

@@ -182,6 +182,33 @@ service cloud.firestore {
         && data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    function isValidScriptVersion(data, userId, projectId) {
+      return data.keys().hasAll([
+          'projectId', 'ownerId', 'sequenceId', 'sequenceTitle',
+          'versionNumber', 'versionLabel', 'changeNote',
+          'sceneCount', 'wordCount', 'scenes', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'projectId', 'ownerId', 'sequenceId', 'sequenceTitle',
+          'versionNumber', 'versionLabel', 'changeNote',
+          'sceneCount', 'wordCount', 'scenes', 'createdAt', 'updatedAt'
+        ])
+        && data.projectId == projectId
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.sequenceId is string && data.sequenceId.size() >= 1 && data.sequenceId.size() <= 128
+        && data.sequenceTitle is string && data.sequenceTitle.size() >= 1 && data.sequenceTitle.size() <= 200
+        && data.versionNumber is int && data.versionNumber >= 1 && data.versionNumber <= 10000
+        && data.versionLabel is string && data.versionLabel.size() >= 1 && data.versionLabel.size() <= 80
+        && data.changeNote is string && data.changeNote.size() <= 400
+        && data.sceneCount is int && data.sceneCount >= 0 && data.sceneCount <= 500
+        && data.wordCount is int && data.wordCount >= 0 && data.wordCount <= 500000
+        && data.scenes is list && data.scenes.size() <= 200
+        && (data.scenes.size() == 0 || data.scenes[0] is map)
+        && data.createdAt is timestamp && data.createdAt <= request.time
+        && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // --- Collection Rules ---
     match /users/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
@@ -292,6 +319,23 @@ service cloud.firestore {
             && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
           allow update: if false;
           allow delete: if isValidId(userId) && isValidId(projectId) && isValidId(messageId) && isOwner(userId);
+        }
+
+        match /script_versions/{versionId} {
+          allow get: if isValidId(userId) && isValidId(projectId) && isValidId(versionId) && isOwner(userId);
+          allow list: if isValidId(userId) && isValidId(projectId) && isOwner(userId);
+          allow create: if isValidId(userId) && isValidId(projectId) && isValidId(versionId)
+            && isOwner(userId)
+            && isValidScriptVersion(incoming(), userId, projectId)
+            && exists(/databases/$(database)/documents/users/$(userId)/projects/$(projectId));
+          allow update: if isValidId(userId) && isValidId(projectId) && isValidId(versionId)
+            && isOwner(userId)
+            && isValidScriptVersion(incoming(), userId, projectId)
+            && incoming().projectId == existing().projectId
+            && incoming().ownerId == existing().ownerId
+            && incoming().createdAt == existing().createdAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['versionLabel', 'changeNote', 'updatedAt']);
+          allow delete: if isValidId(userId) && isValidId(projectId) && isValidId(versionId) && isOwner(userId);
         }
       }
 

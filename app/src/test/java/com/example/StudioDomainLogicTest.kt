@@ -8,11 +8,18 @@ import com.example.data.model.ProductionProject
 import com.example.data.model.ProductionSequence
 import com.example.data.model.ScreenplayBeat
 import com.example.data.model.ScreenplayScene
+import com.example.data.model.ScriptVersion
 import com.example.data.model.SequenceVersionStatus
 import com.example.data.model.ShotSpec
 import com.example.data.model.SoundDesignSpec
 import com.example.data.model.SourceMaterialType
+import com.example.data.model.StoryboardCard
+import com.example.data.model.SystemErrorSeverity
+import com.example.data.model.SystemErrorSource
+import com.example.data.model.SystemErrorStatus
+import com.example.data.model.UserStudioConfig
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.repository.PersistedAccountSession
 import com.example.data.util.AgentLogic
 import com.example.data.util.LearningEngine
 import com.example.data.util.PdfExporter
@@ -20,7 +27,9 @@ import com.example.data.util.ProductionProgress
 import com.example.data.util.ProjectTemplateCatalog
 import com.example.data.util.StudioIntelligence
 import com.example.data.util.StudioLogic
+import com.example.data.util.StudioManualCatalog
 import com.example.data.util.StudioMetricsCalculator
+import com.example.data.util.SystemErrorDiagnostics
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
@@ -307,5 +316,125 @@ class StudioDomainLogicTest {
             notes = "Confirmar entrevistas del lunes"
         )
         assertEquals("Confirmar entrevistas del lunes", updated.first().notes)
+    }
+
+    @Test
+    fun `screenwriting formatting snippets and live metrics compute scenes words and cues`() {
+        var text = StudioLogic.insertScreenplaySnippet("", StudioLogic.ScreenplayFormatSnippet.INT_SCENE)
+        text = StudioLogic.insertScreenplaySnippet(text, StudioLogic.ScreenplayFormatSnippet.DIALOGUE)
+        text = StudioLogic.insertScreenplaySnippet(text, StudioLogic.ScreenplayFormatSnippet.CAMERA)
+        text = StudioLogic.insertScreenplaySnippet(text, StudioLogic.ScreenplayFormatSnippet.SOUND)
+
+        val metrics = StudioLogic.computeScreenplayInputMetrics(text)
+        assertEquals(1, metrics.sceneCount)
+        assertEquals(2, metrics.cueCount)
+        assertTrue(metrics.wordCount >= 12)
+        assertTrue(metrics.lineCount >= 7)
+        assertTrue(metrics.estimatedMinutes >= 0.5)
+    }
+
+    @Test
+    fun `folder assignment deletion and asset summary organize scripts and storyboards`() {
+        val baseProj = sampleProject().copy(
+            sequences = listOf(
+                sampleProject().sequences.first().copy(
+                    storyboardFrames = listOf(
+                        StoryboardCard(id = "sb_1", title = "Plano 1"),
+                        StoryboardCard(id = "sb_2", title = "Plano 2")
+                    )
+                )
+            ),
+            productionFolders = ProjectTemplateCatalog.defaultFoldersFor("short_film")
+        )
+        val firstFolder = baseProj.productionFolders.first()
+        val assigned = ProjectTemplateCatalog.assignSequenceToFolder(baseProj.productionFolders, firstFolder.id, "seq_1")
+        assertTrue(assigned.first().linkedSequenceIds.contains("seq_1"))
+
+        val summary = ProjectTemplateCatalog.resolveFolderAssetsSummary(assigned.first(), baseProj)
+        assertEquals(1, summary.linkedSequences.size)
+        assertEquals(1, summary.sceneCount)
+        assertEquals(2, summary.storyboardFramesCount)
+
+        val unlinked = ProjectTemplateCatalog.removeSequenceFromFolder(assigned, firstFolder.id, "seq_1")
+        assertFalse(unlinked.first().linkedSequenceIds.contains("seq_1"))
+
+        val deleted = ProjectTemplateCatalog.deleteFolder(unlinked, unlinked.last().id)
+        assertEquals(baseProj.productionFolders.size - 1, deleted.size)
+    }
+
+    @Test
+    fun `system error diagnostics sanitize PII audit health and manual PDF generates valid file`() {
+        runBlocking {
+            val entry = SystemErrorDiagnostics.buildEntry(
+                source = SystemErrorSource.AI,
+                rawMessage = "HTTP 403 App Check token expired for director@cine.com token AIzaSyFakeKey1234567",
+                contextHint = "produceSequence"
+            )
+            assertEquals(SystemErrorSeverity.CRITICAL, entry.severity)
+            assertEquals(SystemErrorStatus.OPEN, entry.status)
+            assertFalse(entry.message.contains("director@cine.com"))
+            assertFalse(entry.message.contains("AIzaSyFakeKey1234567"))
+            assertTrue(entry.suggestedFix.isNotBlank())
+
+            val brokenProj = sampleProject().copy(
+                productionFolders = emptyList(),
+                sequences = listOf(
+                    sampleProject().sequences.first().copy(
+                        storyboardFrames = listOf(
+                            StoryboardCard(id = "sb_broken", localImagePath = "/nonexistent/path/frame.png")
+                        )
+                    )
+                )
+            )
+            val audit = SystemErrorDiagnostics.runHealthAuditAndPlanRepairs(
+                projects = listOf(brokenProj),
+                selectedProjectId = "missing_proj",
+                selectedSequenceId = "missing_seq",
+                config = UserStudioConfig(themeMode = "invalid", defaultAspectRatio = "99:1"),
+                hasSignedInUser = false,
+                checkFilesOnDisk = true
+            )
+            assertEquals("dark", audit.sanitizedConfig.themeMode)
+            assertEquals("2.39:1", audit.sanitizedConfig.defaultAspectRatio)
+            assertEquals(1, audit.projectsNeedingDefaultFolders.size)
+            assertEquals(listOf("sb_broken"), audit.brokenFrameIdsToClear)
+
+            val report = SystemErrorDiagnostics.formatDiagnosticReportText(listOf(entry))
+            assertTrue(report.contains("LUMENREEL STUDIO"))
+            assertTrue(report.contains("App Check"))
+
+            assertEquals(StudioManualCatalog.SECTIONS.size, StudioManualCatalog.filterSections("", "all").size)
+            assertTrue(StudioManualCatalog.filterSections("App Check", "all").any { it.id == "error_repair" })
+
+            val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+            val manualPdf = PdfExporter.exportUserManualPdf(context)
+            assertTrue(manualPdf.exists())
+            assertTrue(manualPdf.length() > 500L)
+            manualPdf.delete()
+            Unit
+        }
+    }
+
+    @Test
+    fun `script version word count and persisted account session model behave accurately`() {
+        val scenes = sampleProject().sequences.first().screenplay
+        val words = ScriptVersion.computeWordCount(scenes)
+        assertTrue(words >= 12)
+        assertEquals(0, ScriptVersion.computeWordCount(emptyList()))
+
+        val activeSession = PersistedAccountSession(
+            uid = "uid_google_1",
+            email = "director@lumenreel.com",
+            displayName = "Elena Vance",
+            lastSyncedAtMillis = 1_700_000_000_000L,
+            explicitlySignedOut = false
+        )
+        assertTrue(activeSession.hasRememberedAccount)
+
+        val signedOutSession = activeSession.copy(explicitlySignedOut = true)
+        assertFalse(signedOutSession.hasRememberedAccount)
+
+        val blankSession = PersistedAccountSession(uid = "", explicitlySignedOut = false)
+        assertFalse(blankSession.hasRememberedAccount)
     }
 }
