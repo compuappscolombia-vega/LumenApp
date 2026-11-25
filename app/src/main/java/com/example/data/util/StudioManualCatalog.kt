@@ -78,6 +78,23 @@ object StudioManualCatalog {
 
     val SECTIONS: List<ManualSection> = listOf(
         ManualSection(
+            id = "agent_lumen",
+            category = "guion",
+            badge = "CONTROL DEL AGENTE · LUMEN",
+            title = "Comando y Control del Agente Lumen (Agente Tripartito)",
+            summary = "Domina el Agente Tripartito Lumen (Director, Guionista Hollywood y Experto VFX/SFX) para modificar expedientes, aplicar herramientas y autoaprender reglas de rodaje.",
+            steps = listOf(
+                "Paso 1: Selecciona la pestaña «Agente» en cualquier proyecto activo para iniciar sesión con el Agente Lumen.",
+                "Paso 2: Elige el rol de especialización (Consejo Tripartito, Director de Cine, Guionista o Experto VFX) según el objetivo de tu consulta.",
+                "Paso 3: Escribe tu solicitud en lenguaje natural (ej. «Ajusta la óptica a lentes anamórficos Cooke y añade una capa de lluvia al diseño sonoro»).",
+                "Paso 4: El Agente Lumen evaluará tu solicitud y ejecutará de forma autónoma las 5 herramientas de modificación de expediente: actualizar biblia de continuidad, ajustar cámara/Kelvin, diseñar paquete VFX/SFX, refinar guion o añadir storyboards.",
+                "Paso 5: Consulta el menú «Autoaprendizaje» para guardar reglas técnicas aprobadas que el Agente inyectará automáticamente en futuras producciones."
+            ),
+            proTip = "Puedes alternar entre los 3 roles en cualquier momento; el Agente recuerda el contexto de tu Biblia de Continuidad y secuencias.",
+            actionLabel = "Abrir Panel del Agente",
+            quickAction = ManualQuickAction.NONE
+        ),
+        ManualSection(
             id = "script_ai",
             category = "guion",
             badge = "PASO 1 · GUION & GEMINI",
@@ -121,7 +138,9 @@ object StudioManualCatalog {
                 "En «Planos y Sonido», alterna entre el Escenario 3D interactivo y la Lista de Planos con arquitectura Dolby Atmos.",
                 "En «Storyboard», genera fotogramas conceptuales con Nano y visualiza el encuadre exacto según la relación de aspecto."
             ),
-            proTip = "Califica tus secuencias (1–5 ★) para entrenar a Studio Intelligence y reutilizar tus mejores configuraciones de cámara y luz."
+            proTip = "Califica tus secuencias (1–5 ★) para entrenar a Studio Intelligence y reutilizar tus mejores configuraciones de cámara y luz.",
+            actionLabel = "Abrir Dirección y 3D",
+            quickAction = ManualQuickAction.NONE
         ),
         ManualSection(
             id = "calendar_theme",
@@ -167,7 +186,9 @@ object StudioManualCatalog {
                 "Exporta el guion estándar en formato .FOUNTAIN o .MD para abrirlo en software de guion profesional.",
                 "Guarda o comparte este mismo Manual de Uso en PDF desde el pie del manual interactivo."
             ),
-            proTip = "Los nombres de archivo PDF se generan automáticamente con el título del proyecto y secuencia."
+            proTip = "Los nombres de archivo PDF se generan automáticamente con el título del proyecto y secuencia.",
+            actionLabel = "Exportar Manual PDF",
+            quickAction = ManualQuickAction.NONE
         )
     )
 

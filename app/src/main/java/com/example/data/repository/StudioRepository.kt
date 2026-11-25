@@ -475,6 +475,8 @@ class StudioRepository(
         val allowedRatios = setOf("2.39:1", "1.85:1", "16:9", "1.43:1")
         val safeRatio = raw.defaultAspectRatio.trim().takeIf { it in allowedRatios } ?: "2.39:1"
         val safeDepth = ThinkingDepth.fromWire(raw.defaultThinkingDepth).name
+        val safeEndpoint = raw.gflowEndpointUrl.trim().ifBlank { "https://api.gflow.dev/v1" }.take(300)
+        val safeKey = raw.gflowApiKey.trim().take(200)
         return raw.copy(
             themeMode = safeTheme,
             preferredStyle = raw.preferredStyle.trim().take(160),
@@ -482,7 +484,10 @@ class StudioRepository(
             defaultThinkingDepth = safeDepth,
             lastProjectId = raw.lastProjectId.take(128),
             lastSequenceId = raw.lastSequenceId.take(128),
-            lastTab = raw.lastTab.take(40)
+            lastTab = raw.lastTab.take(40),
+            gflowEndpointUrl = safeEndpoint,
+            gflowApiKey = safeKey,
+            gflowEnabled = raw.gflowEnabled
         )
     }
 
@@ -514,6 +519,9 @@ class StudioRepository(
                     "lastProjectId" to initialConfig.lastProjectId,
                     "lastSequenceId" to initialConfig.lastSequenceId,
                     "lastTab" to initialConfig.lastTab,
+                    "gflowEndpointUrl" to initialConfig.gflowEndpointUrl,
+                    "gflowApiKey" to initialConfig.gflowApiKey,
+                    "gflowEnabled" to initialConfig.gflowEnabled,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -550,7 +558,10 @@ class StudioRepository(
             stage3DDefault = doc.getBoolean("stage3DDefault") ?: fallback.stage3DDefault,
             lastProjectId = doc.getString("lastProjectId") ?: fallback.lastProjectId,
             lastSequenceId = doc.getString("lastSequenceId") ?: fallback.lastSequenceId,
-            lastTab = doc.getString("lastTab") ?: fallback.lastTab
+            lastTab = doc.getString("lastTab") ?: fallback.lastTab,
+            gflowEndpointUrl = doc.getString("gflowEndpointUrl") ?: fallback.gflowEndpointUrl,
+            gflowApiKey = doc.getString("gflowApiKey") ?: fallback.gflowApiKey,
+            gflowEnabled = doc.getBoolean("gflowEnabled") ?: fallback.gflowEnabled
         )
     )
 
@@ -616,6 +627,9 @@ class StudioRepository(
                     "lastProjectId" to normalized.lastProjectId,
                     "lastSequenceId" to normalized.lastSequenceId,
                     "lastTab" to normalized.lastTab,
+                    "gflowEndpointUrl" to normalized.gflowEndpointUrl,
+                    "gflowApiKey" to normalized.gflowApiKey,
+                    "gflowEnabled" to normalized.gflowEnabled,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()

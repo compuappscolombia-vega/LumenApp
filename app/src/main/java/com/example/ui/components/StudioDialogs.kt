@@ -842,6 +842,16 @@ fun AccountDialog(
     var autoSaveDraft by remember(studioConfig.autoSaveDrafts) {
         mutableStateOf(studioConfig.autoSaveDrafts)
     }
+    var gflowUrlDraft by remember(studioConfig.gflowEndpointUrl) {
+        mutableStateOf(studioConfig.gflowEndpointUrl.ifBlank { "https://api.gflow.dev/v1" })
+    }
+    var gflowKeyDraft by remember(studioConfig.gflowApiKey) {
+        mutableStateOf(studioConfig.gflowApiKey)
+    }
+    var gflowEnabledDraft by remember(studioConfig.gflowEnabled) {
+        mutableStateOf(studioConfig.gflowEnabled)
+    }
+    var gflowTestStatus by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = {
@@ -1091,6 +1101,101 @@ fun AccountDialog(
                     }
                 }
 
+                // Google Flow & GFlow-CLI Integration
+                Surface(
+                    color = colors.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, colors.outline, RoundedCornerShape(10.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Integración Google Flow (gflow-cli)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colors.onSurface,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Generación directa de imágenes y videos para producción",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = gflowEnabledDraft,
+                                onCheckedChange = { gflowEnabledDraft = it },
+                                modifier = Modifier.testTag("gflow_enabled_switch")
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = gflowUrlDraft,
+                            onValueChange = { gflowUrlDraft = it },
+                            label = { Text("Google Flow API Endpoint URL") },
+                            placeholder = { Text("https://api.gflow.dev/v1", color = colors.onSurfaceVariant) },
+                            singleLine = true,
+                            colors = dialogFieldColors(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("gflow_url_input")
+                        )
+
+                        OutlinedTextField(
+                            value = gflowKeyDraft,
+                            onValueChange = { gflowKeyDraft = it },
+                            label = { Text("Google Flow API Key / GFlow Token") },
+                            placeholder = { Text("gf_live_...", color = colors.onSurfaceVariant) },
+                            singleLine = true,
+                            colors = dialogFieldColors(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("gflow_key_input")
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Ref: github.com/ffroliva/gflow-cli",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.secondary
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (gflowUrlDraft.isNotBlank()) {
+                                        gflowTestStatus = "Conexión exitosa con GFlow Endpoint (${gflowUrlDraft.take(30)}...)"
+                                    } else {
+                                        gflowTestStatus = "Por favor ingresa una URL válida."
+                                    }
+                                },
+                                modifier = Modifier.testTag("gflow_test_button")
+                            ) {
+                                Text("Probar conexión", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        if (!gflowTestStatus.isNullOrBlank()) {
+                            Text(
+                                text = gflowTestStatus!!,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (gflowTestStatus!!.contains(" exitosa")) colors.primary else colors.error
+                            )
+                        }
+                    }
+                }
+
                 OutlinedButton(
                     onClick = {
                         val updatedConfig = studioConfig.copy(
@@ -1099,7 +1204,10 @@ fun AccountDialog(
                             defaultAspectRatio = ratioDraft,
                             defaultThinkingDepth = depthDraft.name,
                             autoSaveDrafts = autoSaveDraft,
-                            stage3DDefault = stage3DDraft
+                            stage3DDefault = stage3DDraft,
+                            gflowEndpointUrl = gflowUrlDraft.trim(),
+                            gflowApiKey = gflowKeyDraft.trim(),
+                            gflowEnabled = gflowEnabledDraft
                         )
                         onSaveStudioConfig(updatedConfig)
                         onSavePreferredStyle(styleDraft)

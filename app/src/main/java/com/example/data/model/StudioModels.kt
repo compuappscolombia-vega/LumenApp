@@ -682,7 +682,10 @@ data class UserStudioConfig(
     val stage3DDefault: Boolean = true,
     val lastProjectId: String = "",
     val lastSequenceId: String = "",
-    val lastTab: String = "agent"
+    val lastTab: String = "agent",
+    val gflowEndpointUrl: String = "https://api.gflow.dev/v1",
+    val gflowApiKey: String = "",
+    val gflowEnabled: Boolean = false
 ) {
     val isDarkMode: Boolean get() = themeMode != "light"
 }

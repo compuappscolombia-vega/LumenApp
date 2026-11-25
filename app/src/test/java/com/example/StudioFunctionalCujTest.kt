@@ -1102,9 +1102,13 @@ class StudioFunctionalCujTest {
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("account_theme_switch").performScrollTo().performClick()
+        composeRule.onNodeWithTag("account_theme_switch").performClick()
         composeRule.waitForIdle()
         assertEquals(1, toggledTheme)
+
+        composeRule.onNodeWithTag("gflow_enabled_switch").performClick()
+        composeRule.onNodeWithTag("gflow_url_input").performScrollTo().performTextInput("https://test.gflow.api")
+        composeRule.onNodeWithTag("gflow_test_button").performScrollTo().performClick()
 
         composeRule.onNodeWithTag("account_ratio_16:9").performScrollTo().performClick()
         composeRule.onNodeWithTag("account_depth_DEEP").performScrollTo().performClick()
@@ -1113,6 +1117,8 @@ class StudioFunctionalCujTest {
         assertNotNull(savedCfg)
         assertEquals("16:9", savedCfg?.defaultAspectRatio)
         assertEquals(ThinkingDepth.DEEP.name, savedCfg?.defaultThinkingDepth)
+        assertEquals("https://test.gflow.api", savedCfg?.gflowEndpointUrl)
+        assertTrue(savedCfg?.gflowEnabled == true)
     }
 
     @Test
